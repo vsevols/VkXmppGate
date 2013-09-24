@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>1899.12.30 00:00:00.000.643,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.393,X:\Coding\XMPPgate\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr\GateXml.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.462,=X:\Coding\XMPPgate\dpr\JabberServer.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.478,X:\Coding\XMPPgate\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr\EDBase64.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.721,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.748,X:\Coding\XMPPgate\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr\GateFakes.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.563,X:\Coding\XMPPgate\dpr\Unit2.dfm=X:\Coding\XMPPgate\dpr\ufrmMemoEdit.dfm</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.944,X:\Coding\XMPPgate\dpr\GateGlobals.pas=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.064,X:\Coding\XMPPgate\dpr\VKtoXMPPSession.pas=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.941,X:\Coding\XMPPgate\dpr\GateCore.pas=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.093,X:\Coding\XMPPgate\dpr\VKClient.pas=</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.316,X:\Coding\XMPPgate\dpr\VKClient.pas=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.216,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.188,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.573,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.207,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.965,X:\Coding\XMPPgate\dpr\uJabberServer.pas=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.927,X:\Coding\XMPPgate\dpr\uJabberServer.pas=</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.581,=X:\Coding\XMPPgate\dpr\VKClientSession.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.960,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.767,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.159,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.862,X:\Coding\XMPPgate\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr\JabberServerSession.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.563,X:\Coding\XMPPgate\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr\ufrmMemoEdit.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.128,=X:\Coding\XMPPgate\dpr\Unit2.pas</Transaction>
+  </Transactions>
+</BorlandProject>
