@@ -1,0 +1,143 @@
+unit GateXml;
+
+interface
+
+uses
+  Vcl.Forms, Xml.XMLDoc, System.Classes, Xml.XMLIntf, System.SysUtils;
+
+
+  //TODO: !согласовать понятия документа и ноды
+type
+  EGXml = class(Exception);
+  TGateXmlNode = class;
+  TGateXmlNode = class(TComponent)
+  private
+    Node: IXmlNode;
+    function Getattribute(index:variant): variant;
+    function GetchildCount: Integer;
+    function GetchildNode(index: integer): TGateXmlNode;
+    function Gettext: string;
+    function Getxml: string;
+    procedure Settext(const Value: string);
+  public
+    constructor Create(ANode: IXmlNode; AOwner: TComponent);
+    function FirstChild: TGateXmlNode;
+    function getChildByName(const sName: string): TGateXmlNode;
+    function NextSibling: TGateXmlNode;
+    function ToGateXmlNode(ANode: IXmlNode; AOwner: TComponent): TGateXmlNode;
+    property text: string read Gettext write Settext;
+    property xml: string read Getxml;
+    property attribute[index:variant]: variant read Getattribute; default;
+    property childCount: Integer read GetchildCount;
+    property childNode[index:integer]: TGateXmlNode read GetchildNode;
+  end;
+
+  TGateXmlParser = class(TGateXmlNode)
+  private
+    doc: TXmlDocument;
+    function GetrootNode: TGateXmlNode;
+    procedure Setxml(const Value: string);
+  public
+    property xml: string read Getxml write Setxml;
+    constructor Create(AOwner: TComponent = nil);
+    destructor Destroy; override;
+    property rootNode: TGateXmlNode read GetrootNode;
+
+  end;
+
+var
+  xmlForm: TForm;
+
+implementation
+
+constructor TGateXmlNode.Create(ANode: IXmlNode; AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  Node:=ANode;
+end;
+
+function TGateXmlNode.FirstChild: TGateXmlNode;
+begin
+//  Result := ToGateXmlNode(doc.Node.ChildNodes[0]);
+  Result := childNode[0];
+end;
+
+function TGateXmlNode.Getattribute(index:variant): variant;
+begin
+  Result := Node.Attributes[index];
+end;
+
+function TGateXmlNode.getChildByName(const sName: string): TGateXmlNode;
+begin
+  Result:=ToGateXmlNode(Node.ChildNodes.FindNode(sName), Owner);
+end;
+
+function TGateXmlNode.GetchildCount: Integer;
+begin
+  Result := Node.ChildNodes.Count;
+end;
+
+function TGateXmlNode.Gettext: string;
+begin
+  Result := Node.Text;
+end;
+
+function TGateXmlNode.Getxml: string;
+begin
+  Result := Node.XML;
+end;
+
+procedure TGateXmlNode.Settext(const Value: string);
+begin
+  Node.Text:=Value;
+end;
+
+function TGateXmlNode.ToGateXmlNode(ANode: IXmlNode; AOwner: TComponent):
+    TGateXmlNode;
+begin
+  Result:=nil;
+  if not Assigned(ANode) then
+    exit;
+
+  Result := TGateXmlNode.Create(ANode, AOwner);
+end;
+
+function TGateXmlNode.GetchildNode(index: integer): TGateXmlNode;
+begin
+  Result:=ToGateXmlNode(Node.ChildNodes[index], Owner);
+end;
+
+function TGateXmlNode.NextSibling: TGateXmlNode;
+begin
+  //Result:=nil;
+
+  Result:=ToGateXmlNode(Node.NextSibling, Owner);
+end;
+
+constructor TGateXmlParser.Create(AOwner: TComponent = nil);
+begin
+  inherited Create(nil, AOwner);
+  doc:=TXmlDocument.Create(xmlForm);
+end;
+
+destructor TGateXmlParser.Destroy;
+begin
+  FreeAndNil(doc);
+  inherited;
+end;
+
+function TGateXmlParser.GetrootNode: TGateXmlNode;
+begin
+  Result := ToGateXmlNode(doc.DocumentElement, Self);
+end;
+
+procedure TGateXmlParser.Setxml(const Value: string);
+begin
+  doc.XML.Text := Value;
+  if doc.IsEmptyDoc then
+    Node:=nil
+    else
+      Node:=doc.DocumentElement;
+end;
+
+end.
