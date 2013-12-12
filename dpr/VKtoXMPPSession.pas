@@ -609,7 +609,7 @@ begin
   msgRepl:=msg.Reply(
       Format(
       'ѕр€мо сейчас € не могу ответить на ¬аше сообщение.%s%s'+CR+
-      '( автосообщение сервиса VkXmppGate )',
+      '( автосообщение сервиса VkXmppGate &#128161; )',
       [sGuess, sDetailed]
       )
     );

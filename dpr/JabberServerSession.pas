@@ -543,7 +543,9 @@ begin
   // QIP 2012 annoying notifies about delayed(offline) messages
   // Pidgin BUG: all delayed messages interpreted as sent at 03:00:00
   if  (not IsOnlineMessageTime(msg.dt))
-      or (Pos('QIP', sClientProgName)=0)
+//      or ( (msg.dt<>0) and (Pos('QIP', sClientProgName)=0) )
+      //I don't know but may be every message-offline
+      // looks ugly in some other rare clients
       then
        sDelay:='<delay xmlns="urn:xmpp:delay"'+CR+
            //'from="capulet.com"'+CR+

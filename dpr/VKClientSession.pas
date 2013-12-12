@@ -1178,7 +1178,9 @@ begin
     msg.dt := VkDateToDateTime(Node.getChildByName('date').text);
 
     try
-      if bSkipMarkedRead and (Node.getChildByName('read_state').text='1') then
+      if bSkipMarkedRead
+        and (Node.getChildByName('read_state').text='1')
+        and not IsOnlineMessageTime(msg.dt) then
         exit;
     except
     end;

@@ -109,7 +109,7 @@ function UnicodeToAnsiEscape(textString: string): AnsiString;
 
 const
   CR = #$d#$a;
-  SERVER_VER = '1121E4';
+  SERVER_VER = '1121E4.1';
 
   SUPPORTNAME='____XmppGate-Support';
 
