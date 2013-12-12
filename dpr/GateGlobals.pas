@@ -405,7 +405,10 @@ end;
 
 function IsOnlineMessageTime(dt: TDateTime): Boolean;
 begin
-  Result:=MinutesBetween(TTimeZone.Local.ToLocalTime(dt), Now)>2;
+  Result:=
+    (dt=0)
+      or
+    (MinutesBetween(TTimeZone.Local.ToLocalTime(dt), Now)<2);
 end;
 
 function UnicodeToAnsiEscape(textString: string): AnsiString;

@@ -542,12 +542,9 @@ begin
 
   // QIP 2012 annoying notifies about delayed(offline) messages
   // Pidgin BUG: all delayed messages interpreted as sent at 03:00:00
-  if (msg.dt<>0)
-    and
-    (
-      (IsOnlineMessageTime(msg.dt))
+  if  (not IsOnlineMessageTime(msg.dt))
       or (Pos('QIP', sClientProgName)=0)
-    ) then
+      then
        sDelay:='<delay xmlns="urn:xmpp:delay"'+CR+
            //'from="capulet.com"'+CR+
            //'stamp="2002-09-10T23:08:25Z">'+CR+

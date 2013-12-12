@@ -594,9 +594,9 @@ begin
 
 
   if vk.IsMobileClient then
-  sGuess:=' Возможно мой телефон в кармане.'
+  sGuess:=' Похоже мой телефон в кармане.'
   else
-    sGuess:=' Возможно я отошёл от компьютера.';
+    sGuess:=' Похоже я отошёл от компьютера.';
 
   if AwayAnswer='short' then
     sDetailed:=''
@@ -627,7 +627,7 @@ begin
   if slAutoAnswered.IndexOfName(sFrom)>-1 then
     exit;
 
-  slAutoAnswered.Add(sFrom);
+  slAutoAnswered.Add(sFrom+'=');
   Result:=true;
 end;
 
