@@ -1,0 +1,29 @@
+unit GateXml;
+
+interface
+
+uses
+  Vcl.Forms, Xml.XMLDoc;
+
+type
+  TGateXmlParser = class(TObject)
+  private
+    doc: TXmlDocument;
+  public
+    constructor Create;
+  end;
+
+  TGateXmlNode = class(TObject)
+  end;
+var
+  xmlForm: TForm;
+
+implementation
+
+constructor TGateXmlParser.Create;
+begin
+  inherited;
+  doc:=TXmlDocument.Create;
+end;
+
+end.

@@ -1,0 +1,8 @@
+unit vkApi;
+
+interface
+  EVkApiParse = class(Exception)
+  end;
+implementation
+
+end.

@@ -1,0 +1,12 @@
+unit vkApi;
+
+interface
+
+uses
+  System.Classes;
+
+  EVkApiParse = class(Exception)
+  end;
+implementation
+
+end.

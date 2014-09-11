@@ -197,7 +197,7 @@ end;
 
 procedure InitVsDbg(isDbg, bDoDbgLog: boolean; sDbgDir: string);
 begin
-  cs:=TCriticalSection.Create;
+  //cs:=TCriticalSection.Create;
 
   uvsDebug.isDbg:=isDbg;
   uvsDebug.doDbgLog:=bDoDbgLog;
@@ -217,6 +217,7 @@ end;
 
 
 initialization
+  cs:=TCriticalSection.Create;
 finalization
 begin
   FreeAndNil(cs);

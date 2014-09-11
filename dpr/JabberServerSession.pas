@@ -21,12 +21,16 @@ type
     function Sha1Hex(rb: RawByteString): string;
     function ToHex(rb: RawByteString): string;
   private
+    AliveTestMethod: string;
     bAuth: Boolean;
     DBGbServer: Boolean;
     bTls: Boolean;
+    FAliveTested: Boolean;
     FLastFriends: TFriendList;
+    FOnPresShowChanged: TObjProc;
     FPresShow: string;
     MsgQueue: TObjectList<TGateMessage>;
+    QueryClientVersionDone: Boolean;
     sBindId: string;
     sClientOs: string;
     sClientProgName: string;
@@ -37,8 +41,6 @@ type
     procedure DoSasl(AContext: TIdContext);
     procedure DoTls(AContext: TIdContext);
     function GetBase64DataByUrl(sUrl: string): RawByteString;
-    function HttpMethodRawByte(sUrl: string; bSsl: boolean; slPost: TStringList =
-        nil): RawByteString;
     procedure IqReplyError(sId, xmlns: string; nErrCode: Integer);
     procedure ProcessAliases(var sLogin, sKey: string);
     procedure ProcessGetRoster(const sId: string);
@@ -48,7 +50,8 @@ type
     procedure ProcessJabStream;
     procedure ProcessOnline(XML: TjanXMLParser2);
     procedure ProcessResult(Node: TjanXMLNode2);
-    procedure QueryClientVersion;
+    procedure QueryClientVersion(bForce: Boolean; sId: string = '');
+    procedure SetAliveTested(const Value: Boolean);
     procedure SetPresShow(Value: string);
     function ToXmlRosterItem(fr: TFriend): string;
     procedure XmlSendVCard(sId, sAddr: string; fr: TFriend);
@@ -61,6 +64,7 @@ type
     OnAuthorized: procedure(sLogin: string) of object;
     OnGetFriend: function(sAddr:string):TFriend of object;
     OnIdle: procedure of object;
+    OnStillAlive: TObjProc;
     Profile: TGateStorage;
     sJid: string;
     sKey: string;
@@ -71,10 +75,14 @@ type
     Terminate: Boolean;
     constructor Create(AContext: TIdContext);
     destructor Destroy; override;
+    procedure AliveTest;
+    function UrlExtractFileName(const FileName: string): string; overload;
     function FriendsDiff(was, became: TFriendList): TFriendList;
+    function XmlGetAttr(Node: TjanXMLNode2; const Child, Attr: string): string;
     function InputQuery(const Captioin, Prompt: string; var sVal: string): Boolean;
     procedure InternalOnExecute;
     procedure Log(const Value: string);
+    procedure OnDisconnected(Sender: TObject);
     function Packet_SendMessage(msg: TGateMessage): UTF8String;
     procedure ProcessMessage(Node: TjanXMLNode2);
     function Recv(iLogNum: Integer): string; overload;
@@ -90,10 +98,14 @@ type
     procedure SendMsgQueue;
     procedure StartTls(AContext: TIdContext);
     function UTF8BytesToString(bytes: TIdBytes): string;
-    function StringToUTF8Bytes(str: string): TIdBytes;
+    class function StringToUTF8Bytes(str: string): TIdBytes;
     function ToXmlPresence(fr: TFriend): string;
+    procedure Typing(sFrom, sEvent: string);
     procedure UpdatePresences(friends: TFriendList);
     procedure WriteFileTest(str: RawByteString);
+    property OnPresShowChanged: TObjProc read FOnPresShowChanged write
+        FOnPresShowChanged;
+    property AliveTested: Boolean read FAliveTested write SetAliveTested;
     property PresShow: string read FPresShow write SetPresShow;
   end;
 
@@ -112,7 +124,8 @@ begin
   UserStatus:=just_online;
 
   Context:=AContext;
-  AContext.Data:=Self;
+  Context.Data:=Self;
+  Context.Connection.OnDisconnected:=OnDisconnected;
 
   MsgQueue:=TObjectList<TGateMessage>.Create(true);
 
@@ -125,10 +138,44 @@ end;
 
 destructor TJabberServerSession.Destroy;
 begin
-  inherited;
 
   if Assigned(FLastFriends) then
     FLastFriends.Free;
+
+  //SOLVED: if this line uncommented - IndyTCPServer.Contexts.Count does not decrements
+  // AV ?
+  inherited;
+end;
+
+procedure TJabberServerSession.AliveTest;
+var
+  sSysJid: string;
+begin
+  sSysJid:='sys@'+sServerName;
+
+  if (AliveTestMethod='') or (AliveTestMethod='at_version') then
+  begin
+    QueryClientVersion(true, 'at_version');
+  end;
+  if (AliveTestMethod='') or (AliveTestMethod='at_ping') then
+  begin
+    SendFmt(
+    '<iq from="%s" to="%s" id="at_ping" type="get">'+
+    '<ping xmlns="urn:xmpp:ping"/>'+
+    '</iq>',
+      [sSysJid, sJid]);
+  end;
+  if (AliveTestMethod='') or (AliveTestMethod='at_probe') then
+  begin
+    SendFmt(
+      '<presence id="at_probe" type="probe" from="%s" to="%s"/>'
+      , [sSysJid, sJid]
+    );
+  end;
+
+  if AliveTestMethod='' then
+    AliveTestMethod:='none'; //until no results of tests
+
 end;
 
 function TJabberServerSession.DecodeBase64(const CinLine: D7String): D7String;
@@ -211,7 +258,7 @@ S1 =
 '<?xml version=''1.0''?>'+
 '<stream:stream xmlns=''jabber:client'''+
 'xmlns:stream=''http://etherx.jabber.org/streams'' '+
-'id=''c2s_201898'' from=''localhost'' version=''1.0''>'+
+'id=''c2s_201898'' from=''%s'' version=''1.0''>'+
 '<stream:features>'#13#10+
     '<mechanisms xmlns=''urn:ietf:params:xml:ns:xmpp-sasl''>'#13#10+
       //'<mechanism>DIGEST-MD5</mechanism>'#13#10+
@@ -221,7 +268,7 @@ S1 =
 begin
 
   Recv;
-  Send(S1);
+  SendFmt(S1, [sServerName]);
   Status:=jsst_auth;
 
 end;
@@ -247,6 +294,15 @@ begin
         );
 
   StartTls(Context);
+end;
+
+function TJabberServerSession.UrlExtractFileName(const FileName: string):
+    string;
+var
+  I: Integer;
+begin
+  I := FileName.LastDelimiter('\/' + DriveDelim);
+  Result := FileName.SubString(I + 1);
 end;
 
 function TJabberServerSession.FriendsDiff(was, became: TFriendList):
@@ -276,6 +332,22 @@ begin
 
 
   Result := diff;
+end;
+
+function TJabberServerSession.XmlGetAttr(Node: TjanXMLNode2; const Child, Attr:
+    string): string;
+begin
+  Result := '';
+
+  if Child='' then
+  begin
+    Result:=Node.attribute[Attr];
+    exit;
+  end;
+
+  if Node.getChildByName(Child)<>nil then
+        Result:=Node.getChildByName(Child).attribute[Attr];
+
 end;
 
 function TJabberServerSession.GetBase64DataByUrl(sUrl: string): RawByteString;
@@ -320,7 +392,7 @@ begin
 
     if sl.Count>1 then
     begin
-      if Trim(sl.Strings[0])=sPhotoUrl then
+      if UrlExtractFileName(sl.Strings[0])=UrlExtractFileName(sPhotoUrl) then
       begin
         Result:=sl.Strings[1];
         exit;
@@ -344,22 +416,6 @@ begin
      end;
   finally
     sl.Free;
-  end;
-end;
-
-function TJabberServerSession.HttpMethodRawByte(sUrl: string; bSsl: boolean;
-    slPost: TStringList = nil): RawByteString;
-var
-  ss: TStringStream;
-begin
-  Result := '';
-
-  ss:=TStringStream.Create;
-  try
-   HttpMethodSSL(sUrl, nil, false, ss);
-   Result := ss.DataString;
-  finally
-    ss.Free;
   end;
 end;
 
@@ -533,6 +589,11 @@ begin
     OnLog(Value);
 end;
 
+procedure TJabberServerSession.OnDisconnected(Sender: TObject);
+begin
+  // TODO -cMM: TJabberServerSession.OnDisconnected default body inserted
+end;
+
 function TJabberServerSession.Packet_SendMessage(msg: TGateMessage): UTF8String;
 var
   sDelay: string;
@@ -605,6 +666,7 @@ var
   sFriendItems: string;
 begin
   Status:=jsst_online;
+  AliveTest;
   SendMsgQueue;
 
   if Assigned(profile) then
@@ -616,13 +678,16 @@ begin
   SendFmt(
     '<iq type="result" to="%s" id="%s">'#13#10+
     '<query xmlns="jabber:iq:roster">'#13#10+
-    '<item subscription="both" name="%s" jid="support@%s"/>'+CR+
-    '<item subscription="both" name="xmppgate" jid="xmppgate"/>'+CR+ // чтобы не срабатывал анти-спам квипа
+    '<item subscription="both" name="%s" jid="support@%s"> <group>VkXmppGate</group> </item>'+CR+
+    '<item subscription="both" name="____XmppGate-Bot" jid="%s"> <group>VkXmppGate</group> </item>'+CR+ // чтобы не срабатывал анти-спам квипа
     '%s'+CR+
     '</query>'+CR+
-    '</iq>', [sJid, sId, SUPPORTNAME, sServerName, sFriendItems]
+    '</iq>', [sJid, sId, SUPPORTNAME, sServerName, 'xmppgate@vkxmpp.hopto.org', sFriendItems]
     );                     //TODO: объединить с ToXmlPresence, SaveFriends
                             //TODO: упразднить SaveFriends, запрашивать callback GetFriends
+                            //TODO: analyze redundancy with AddStdContacts
+                            // describe here if it useful for first connection
+                            // + if it added only here - the status is offline
 
   if not bAuth then   //TODO: перенести в лок. переменную, в нач.функции: bAuth=Status=auth_done
   begin
@@ -664,7 +729,7 @@ begin
     ProcessResult(Node);
 
   if (sClientProgName='') and (Status<>jsst_online)then
-    QueryClientVersion;
+    QueryClientVersion(true);
   //  ответ приходит только после Session //PSI
   //  проверено опытным путем
   // однако посылать стоит заранее,
@@ -758,7 +823,23 @@ begin
      except
      end;
 
-  // if Pos(Node.childNode[0].attribute['xmlns'], 'disco#info')>0 then
+   if Node.childCount>0 then
+   if Pos(Node.childNode[0].attribute['xmlns'], 'disco#info')>0 then
+    begin
+      SendFmt(
+        '<iq from="%s"'+CR+
+        'id="%s"'+CR+
+        'to="%s"'+CR+
+        'type="result">'+CR+
+        '<query xmlns="http://jabber.org/protocol/disco#info">'+CR+
+        '<feature var="http://jabber.org/protocol/chatstates"/>'+CR+
+        '</query>'+CR+
+        '</iq>', [XmlGetAttr(Node, '', 'to'), XmlGetAttr(Node, '', 'id'), XmlGetAttr(Node, '', 'from')]
+      );
+      exit;
+    end;
+
+
 
      IqReplyError(sId, xmlns, 501);
    end;
@@ -833,9 +914,13 @@ end;
 
 procedure TJabberServerSession.ProcessResult(Node: TjanXMLNode2);
 begin
+
   try
     if Node.attribute['id']='ask_version' then
     begin
+      if sClientProgName<>'' then
+        exit;
+
       if (Node.getChildByName('query')<>nil) then
        begin
          if (Node.getChildByName('query').getChildByName('name')<>nil) then
@@ -853,20 +938,42 @@ begin
 
        end;
     end;
+
+    if Pos('at_',Node.attribute['id'])=1 then
+    begin
+      AliveTested:=True;
+      if AliveTestMethod='' then
+      begin
+        AliveTestMethod:=Node.attribute['id'];
+        OnLog(Format('AT_ result: %s (selected as AliveTestMethod)', [Node.attribute['id']]));
+      end
+        else OnLog(Format('AT_ result: %s', [Node.attribute['id']]));
+    end;
+
   except
   end;
 end;
 
-procedure TJabberServerSession.QueryClientVersion;
+procedure TJabberServerSession.QueryClientVersion(bForce: Boolean; sId: string
+    = '');
 var
   sXml: string;
 begin
+  if QueryClientVersionDone and not bForce then
+    exit;
+
+  if sId='' then
+    sId:='ask_version';
+
   sXml:=
-  '<iq from="%s" type="get" to="%s" id="ask_version">'+CR+
+  '<iq from="%s" type="get" to="%s" id="%s">'+CR+
   '<query xmlns="jabber:iq:version"/>'+CR+
   '</iq>';
 
-  Send(Format(sXml, [sServerName, sJid]));
+  Send(Format(sXml, ['sys@'+sServerName, sJid, sId]));
+
+  if Status=jsst_online then
+    QueryClientVersionDone:=true;
 
 end;
 
@@ -932,9 +1039,22 @@ end;
 procedure TJabberServerSession.SendMessage(msg: TGateMessage);
 begin
   if Status=jsst_online then
+  begin
+    if msg.sType='typing' then
+    begin
+      if msg.sBody<>'paused' then
+        Typing(msg.sFrom, 'composing')
+        else
+          Typing(msg.sFrom, 'paused');
+      exit;
+    end;
+
     Send(Packet_SendMessage(msg))
+  end
     else
       MsgQueue.Add(msg.Duplicate);
+      //TODO: may be recursively SendMessage->MsgQueue.Add->SendMessage is
+      // the reason of duplicating
 end;
 
 procedure TJabberServerSession.SendMessage(sFrom, sBody: string; bSendLast:
@@ -964,6 +1084,23 @@ begin
   MsgQueue.Clear;
 end;
 
+procedure TJabberServerSession.SetAliveTested(const Value: Boolean);
+begin
+  if FAliveTested = Value then
+    exit;
+
+  FAliveTested := Value;
+
+  if not Value then
+    if AliveTestMethod<>'none' then
+      AliveTest
+      else
+        FAliveTested:=True;
+
+  if FAliveTested then
+    OnStillAlive;
+end;
+
 procedure TJabberServerSession.SetPresShow(Value: string);
 begin
   Value:=LowerCase(Trim(Value));
@@ -973,6 +1110,7 @@ begin
 
   FPresShow := Value;
   dtPresShow:=IncHour(TTimeZone.Local.ToUniversalTime(Now), 4);
+  OnPresShowChanged();
 
 end;
 
@@ -997,7 +1135,7 @@ begin
     Result := UTF8ToString(PAnsiChar(bytes));
 end;
 
-function TJabberServerSession.StringToUTF8Bytes(str: string): TIdBytes;
+class function TJabberServerSession.StringToUTF8Bytes(str: string): TIdBytes;
 var
   rs: RawByteString;
 begin
@@ -1101,6 +1239,29 @@ begin
   '</item>';
 
   Result:=Format(Result, [fr.sAddr, XmlEscape(fr.sFullName, true), XmlEscape(fr.sGroup, true)]);
+end;
+
+procedure TJabberServerSession.Typing(sFrom, sEvent: string);
+begin
+  {SendFmt(
+    '<message'+CR+
+    'from="%s"'+CR+
+    'to="%s"'+CR+
+    'type="chat">'+CR+
+    '<active xmlns="http://jabber.org/protocol/chatstates"/>'+CR+
+    '</message>',
+      [sFrom, sJid]
+    );
+          }
+  SendFmt(
+    '<message'+CR+
+    'from="%s"'+CR+
+    'to="%s"'+CR+
+    'type="chat">'+CR+
+    '<%s xmlns="http://jabber.org/protocol/chatstates"/>'+CR+
+    '</message>',
+      [sFrom, sJid, sEvent]
+    );
 end;
 
 procedure TJabberServerSession.UpdatePresences(friends: TFriendList);

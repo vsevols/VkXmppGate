@@ -1,0 +1,246 @@
+unit VkApi;
+
+interface
+
+uses
+  janXMLparser2, System.SysUtils, System.Classes;
+
+type
+
+  EVkApi = class(Exception)
+  private
+  public
+    Error: Integer;
+    constructor Create(AError: Integer; sMsg: string);
+  end;
+
+
+  TVkApi = class(TComponent)
+  private
+    ApiToken: string;
+    sCaptchaResponse: string;
+    function DoVkApiCall(sUrl: string; slPost: TStringList = nil): TjanXMLParser2;
+  public
+    // called with false when auth error occurs
+    OnTokenNotify: procedure(bAuthorized: boolean) of object;
+    // called with false when auth error occurs
+
+    sApiClientId: string;
+    sApiKey: string;
+    sCaptchaSid: string;
+    function HttpMethodSSL(sUrl: string; slPost: TStringList = nil): string;
+    function IsReady: boolean;
+    procedure QueryToken(sCode: string);
+    procedure SleepRandom(maxMilliseconds: Integer);
+    function VkApiCall(sUrl: string; slPost: TStringList = nil): TjanXMLParser2;
+    procedure VkApiCallFmt(const sMethod, sParams: string; args: array of const;
+        slPost: TStringList = nil);
+    procedure VkErrorCheck(xml: TjanXMLNode2);
+  end;
+
+implementation
+
+uses
+  IdHTTP, IdSSLOpenSSL, GateGlobals, GateFakes;
+
+function TVkApi.DoVkApiCall(sUrl: string; slPost: TStringList = nil):
+    TjanXMLParser2;
+var
+  sXml: string;
+  xml: TjanXMLParser2;
+begin
+  Result:=nil;
+
+  sXml:=HttpMethodSSL(sUrl, slPost);
+
+  xml:=TjanXMLParser2.Create;
+  try
+    xml.xml:=sXMl;
+  except
+    xml.Free;
+    raise Exception.Create('Error parsing VK API response');
+  end;
+
+    try
+      VkErrorCheck(xml);
+    except
+      xml.Free;
+      raise;
+    end;
+
+  Result := xml;
+end;
+
+function TVkApi.HttpMethodSSL(sUrl: string; slPost: TStringList = nil): string;
+var
+  IdHTTP1: TIdHttp;
+  IdSSLIOHandlerSocket1: TIdSSLIOHandlerSocketOpenSSL;
+begin
+  IdHTTP1:=TIdHTTP.Create;
+  IdSSLIOHandlerSocket1:=TIdSSLIOHandlerSocketOpenSSL.Create(IdHTTP1);
+  IdHTTP1.IOHandler:= IdSSLIOHandlerSocket1;
+  //IdSSLIOHandlerSocket1.SSLOptions.Method:= sslvSSLv2;
+  //IdSSLIOHandlerSocket1.SSLOptions.Mode := sslmUnassigned;
+
+//IdHTTP1.Host := sHost;
+  //IdHTTP1.Port := 443;
+{  IdHTTP1.HandleRedirects := True;
+  IdHTTP1.Request.ContentType := 'text/html';
+  IdHTTP1.Request.Accept := 'text/html, */*';
+  IdHTTP1.Request.BasicAuthentication := False;
+  IdHTTP1.Request.UserAgent := 'Mozilla/4.0 (compatible; MSIE 6.0; MSIE 5.5;) ';
+  ms:=TMemoryStream.Create;
+ }
+  //ms:=TMemoryStream.Create;
+
+  if not Assigned(slPost) then
+    Result:=IdHTTP1.Get(sUrl)
+    else
+      Result:=IdHTTP1.Post(sUrl, slPost);
+
+  IdHTTP1.Free;
+
+  //ms.Free;
+end;
+
+function TVkApi.IsReady: boolean;
+begin
+  Result := (sCaptchaSid='') or (sCaptchaResponse<>'');
+  Result := Result and (ApiToken<>'');
+end;
+
+procedure TVkApi.QueryToken(sCode: string);
+var
+  sJson: string;
+begin
+  Result:=false;
+
+  sCode:=ExtractAuthCode(sCode);
+  try
+    sJson:=vkapi.HttpMethodSSL(   //NOT VkApiCall because reply is JSON
+      Format(
+      'https://api.vk.com/oauth/token?client_id=%s'+
+      '&client_secret=%s&code=%s'+
+      '&redirect_uri=https://oauth.vk.com/blank.html',
+      [sApiClientId, sApiKey, sCode]));
+  except
+    exit;
+  end;
+
+  ApiToken:=GetRxGroup(sJson, '"access_token":"(.+?)"', 1);
+  //uid:=GetRxGroup(sJson, '"user_id":(\d+)', 1);
+
+
+  if ApiToken<>'' then
+    Result:=true;
+end;
+
+procedure TVkApi.SleepRandom(maxMilliseconds: Integer);
+var
+  ms: Integer;
+begin
+  gcs.Enter;
+  ms:=Random(maxMilliseconds);
+  gcs.Leave;
+  Sleep(ms);
+end;
+
+function TVkApi.VkApiCall(sUrl: string; slPost: TStringList = nil):
+    TjanXMLParser2;
+const
+  EVK_TOKENEXPIRED = 5;
+  EVK_TOOMANYREQUESTS = 6;
+begin
+  Result:=nil;
+
+  if not IsReady then
+  begin
+    raise Exception.Create('Waiting for captcha');
+    exit;
+  end;
+
+
+  if (sCaptchaResponse<>'') and (sCaptchaSid<>'') then
+    sUrl:=Format('%s&captcha_sid=%s&captcha_key=%s', [sUrl, sCaptchaSid, sCaptchaResponse]);
+
+  while True do
+  begin
+
+    try
+      Result:=DoVkApiCall(sUrl, slPost);
+    except
+      on evk: EVkApi do
+        begin
+          if evk.Error=EVK_TOOMANYREQUESTS then
+          begin
+            SleepRandom(500);
+            continue;
+          end;
+
+          if evk.Error=EVK_TOKENEXPIRED then
+          begin
+            if Assigned(OnTokenNotify) then
+              OnTokenNotify(false);
+
+          end;
+
+          raise;
+
+        end;
+    end;
+
+    break;
+  end;
+
+  sCaptchaSid:='';
+end;
+
+procedure TVkApi.VkApiCallFmt(const sMethod, sParams: string; args: array of
+    const; slPost: TStringList = nil);
+var
+  sApiVer: string;
+  sUrl: string;
+begin
+  sApiVer:='3.0';
+
+  sUrl:=Format(sParams, args);
+  sUrl:=Format('https://api.vk.com/method/%s.xml?v=%s&access_token=%s&%s' ,
+    [sMethod, sApiVer, ApiToken, sUrl]);
+  VkApiCall(sUrl, slPost)
+end;
+
+procedure TVkApi.VkErrorCheck(xml: TjanXMLNode2);
+var
+  nErrCode: Integer;
+  sMsg: string;
+const
+  EVK_CAPTCHANEEDED = 14;
+begin
+  //Result := false;
+
+
+  nErrCode:=0;
+
+  FakeVkErrorCheckSub(xml);
+
+
+  if xml.name<>'error' then
+    exit;
+
+  //Result := true;
+
+  nErrCode:=StrToInt(Trim(xml.getChildByName('error_code').text));
+
+  try
+    sMsg:=xml.getChildByName('error_msg').text;
+  except
+  end;
+
+
+  if EVK_CAPTCHANEEDED=nErrCode then
+    ProcessCaptchaNeeded(xml);
+
+  raise EVkApi.Create(nErrCode, Format('VK API ERROR: %d %s', [nErrCode, sMsg]));
+end;
+
+end.

@@ -13,7 +13,9 @@ uses
   GateFakes in 'GateFakes.pas',
   GateXml in 'GateXml.pas',
   VkLongPollClient in 'VkLongPollClient.pas',
-  vkApi in 'vkApi.pas';
+  vkApi in 'vkApi.pas',
+  GateVkCaptcha in 'GateVkCaptcha.pas',
+  FileVersion in 'FileVersion.pas';
 
 {$R *.res}
 

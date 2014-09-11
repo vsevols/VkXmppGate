@@ -1,0 +1,38 @@
+unit GateXml;
+
+interface
+
+uses
+  Vcl.Forms, Xml.XMLDoc;
+
+type
+  TGateXmlNode = class(TObject)
+  end;
+
+  TGateXmlParser = class(TGateXmlNode)
+  private
+    doc: TXmlDocument;
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+var
+  xmlForm: TForm;
+
+implementation
+
+constructor TGateXmlParser.Create;
+begin
+  inherited;
+  doc:=TXmlDocument.Create(xmlForm);
+end;
+
+destructor TGateXmlParser.Destroy;
+begin
+  FreeAndNil(doc);
+  inherited;
+  // TODO -cMM: TGateXmlParser.Destroy default body inserted
+end;
+
+end.
