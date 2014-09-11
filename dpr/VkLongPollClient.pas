@@ -3,7 +3,7 @@ unit VkLongPollClient;
 interface
 
 uses
-  System.Classes, GateGlobals, IdHttp, IdGlobal, System.SyncObjs;
+  System.Classes, GateGlobals, IdHttp;
 
 type
   TLongPollStream = class;
@@ -13,7 +13,7 @@ type
     FOnLog: TLogProc;
     Key: string;
     OnNewServerNeeded: TVoidObjProc;
-    Owner: TComponent;
+    childsOwner: TComponent;
     pollStream: TLongPollStream;
     Server: string;
     tcp: TIdHttp;
@@ -26,10 +26,8 @@ type
     procedure SetOnEvent(const Value: TVoidObjProc);
     procedure SetOnLog(const Value: TLogProc);
   public
-    cs: TCriticalSection;
     //OnLog: TLogProc;
     VkApiCallFmt: TVkApiCallFmt;
-    OnTyping: procedure(sUid:string) of object;
     constructor Create(bSuspended: Boolean);
     destructor Destroy; override;
     procedure Execute; override;
@@ -53,17 +51,15 @@ uses
 constructor TVkLongPollClient.Create(bSuspended: Boolean);
 begin
   inherited;
-  owner:=TComponent.Create(nil);
-  cs := TCriticalSection.Create();
-  tcp:=TIdHttp.Create(owner);
+  childsOwner:=TComponent.Create(nil);
+  tcp:=TIdHttp.Create(childsOwner);
   pollStream:=TLongPollStream.Create;
   pollStream.OnWrite:=Parse;
 end;
 
 destructor TVkLongPollClient.Destroy;
 begin
-  FreeAndNil(cs);
-  FreeAndNil(owner);
+  FreeAndNil(childsOwner);
   FreeAndNil(pollStream);
   inherited Destroy;
 end;
@@ -154,8 +150,6 @@ begin
 end;
 
 function TVkLongPollClient.Parse(sJson: string): boolean;
-var
-  sTypingId: string;
 begin
   Result:=true;
 
@@ -165,24 +159,8 @@ begin
   if JsonErrorCheck(sJson) then
   begin
     if Pos('[4,', sJson)>0 then
-      try
-        cs.Enter;
-        OnEvent;
-      finally
-        cs.Leave;
-      end;
-
-    sTypingId:=GetRxGroup(sJson, '61,(-{0,1}\d*?),', 1);
-    if sTypingId<>'' then
-      if Assigned(OnTyping) then
-        try
-          cs.Enter;
-          OnTyping(sTypingId);
-        finally
-          cs.Leave;
-        end;
-
-    Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
+      OnEvent;
+      Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
   end
     else Ts:='';
 
