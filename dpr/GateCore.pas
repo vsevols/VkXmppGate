@@ -59,7 +59,7 @@ begin
   // calling separately of Create because here is a cycle
   // with ProcessMessages
   InitVsDbg(isDbg, true, AbsPath('log\'));
-  Log('Starting '+SERVER_VER+' CmdLine: '+ CmdLine);
+  Log('Starting '+SERVER_VER+' Path: '+Application.ExeName);
 
 
   KillPidIfNeeded;

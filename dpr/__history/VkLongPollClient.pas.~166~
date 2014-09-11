@@ -13,7 +13,7 @@ type
     FOnLog: TLogProc;
     Key: string;
     OnNewServerNeeded: TVoidObjProc;
-    Owner: TComponent;
+    owner: TComponent;
     pollStream: TLongPollStream;
     Server: string;
     tcp: TIdHttp;
@@ -150,8 +150,6 @@ begin
 end;
 
 function TVkLongPollClient.Parse(sJson: string): boolean;
-var
-  sTypingId: string;
 begin
   Result:=true;
 
@@ -162,13 +160,7 @@ begin
   begin
     if Pos('[4,', sJson)>0 then
       OnEvent;
-
-    sTypingId:=GetRxGroup(sJson, '61,(\d*?),', 1);
-    if sTypingId<>'' then
-      if Assigned(OnTyping) then
-        OnTyping(sTypingId);
-
-    Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
+      Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
   end
     else Ts:='';
 

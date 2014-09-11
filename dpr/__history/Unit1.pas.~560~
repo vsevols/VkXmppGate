@@ -84,7 +84,7 @@ procedure TForm1.DecClients;
 begin
   cs.Enter;
 
-  Dec(ClientCount);
+  ClientCount:=core.Jab.tcp.Contexts.Count-1; //calling context is desctructing now
   UpdateGui(true);
 
   cs.Leave;
@@ -98,15 +98,15 @@ end;
 procedure TForm1.FormCreate(Sender: TObject);
 begin
   isDbg:=false;
-//  isDbg:=true;
+ // isDbg:=true;
   //bFakes:=true;
 
   //bLongPollLog:=true;
   //bVkApiLog:=true;
-  //bXmppLog:=true;
+  bXmppLog:=true;
 
-  if isDbg then
-    TempEmojiPack;
+  //if isDbg then
+  //  TempEmojiPack;
 
   if not isDbg then
   begin
@@ -180,10 +180,7 @@ procedure TForm1.IncClients;
 begin
   cs.Enter;
 
-  //ClientCount:=core.Jab.tcp.Contexts.Count;
-  // this never decrements on disconnect
-
-  Dec(ClientCount);
+  ClientCount:=core.Jab.tcp.Contexts.Count;
   UpdateGui(true);
 
   cs.Leave;
@@ -302,7 +299,7 @@ procedure TForm1.UpdateGui(bInform: boolean);
 var
   sDbg: string;
 begin
-  ClientCount:=core.Jab.tcp.Contexts.Count;
+//  ClientCount:=core.Jab.tcp.Contexts.Count;
 
   sDbg:=IfThen(isDbg, 'DBG', '');
   Caption:=Format('v.%s %s Подключено клиентов: %d Порт: %d',

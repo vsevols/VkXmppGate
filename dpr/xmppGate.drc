@@ -17,10 +17,11 @@
 #define IdResourceStringsSSPI_RSHTTPSSPIUnknwonCredentialUse 64934
 #define IdResourceStringsSSPI_RSHTTPSSPIDoAuquireCredentialHandle 64935
 #define IdResourceStringsSSPI_RSHTTPSSPICompleteTokenNotSupported 64936
-#define Xml_XMLConst_SDuplicateRegistration 64937
-#define Xml_XMLConst_SDOMNotSupported 64938
-#define Xml_XMLConst_SNodeExpected 64939
-#define Xml_XMLConst_SMSDOMNotInstalled 64940
+#define GateGlobals_sInvalidHTMLEncodedChar 64937
+#define Xml_XMLConst_SDuplicateRegistration 64938
+#define Xml_XMLConst_SDOMNotSupported 64939
+#define Xml_XMLConst_SNodeExpected 64940
+#define Xml_XMLConst_SMSDOMNotInstalled 64941
 #define IdResourceStringsSSPI_RSHTTPSSPIPKInitClientFailure 64944
 #define IdResourceStringsSSPI_RSHTTPSSPISmartcardExpired 64945
 #define IdResourceStringsSSPI_RSHTTPSSPINoS4UProtSupport 64946
@@ -624,6 +625,7 @@ BEGIN
 	IdResourceStringsSSPI_RSHTTPSSPIUnknwonCredentialUse,	L"Unknown credentials use"
 	IdResourceStringsSSPI_RSHTTPSSPIDoAuquireCredentialHandle,	L"Do AcquireCredentialsHandle first"
 	IdResourceStringsSSPI_RSHTTPSSPICompleteTokenNotSupported,	L"CompleteAuthToken is not supported"
+	GateGlobals_sInvalidHTMLEncodedChar,	L"Invalid HTML encoded character (%s) at position %d"
 	Xml_XMLConst_SDuplicateRegistration,	L"\"%s\" DOMImplementation already registered"
 	Xml_XMLConst_SDOMNotSupported,	L"Property or Method \"%s\" is not supported by DOM Vendor \"%s\""
 	Xml_XMLConst_SNodeExpected,	L"Node cannot be null"
@@ -1222,8 +1224,8 @@ BEGIN
 	System_SysConst_SDivByZero,	L"Division by zero"
 END
 
-/* c:\program files (x86)\embarcadero\rad studio\11.0\lib\Win32\release\Controls.res */
-/* X:\Coding\XMPPgate\dpr1219B\dpr\ufrmMemoEdit.dfm */
-/* X:\Coding\XMPPgate\dpr1219B\dpr\Unit1.dfm */
-/* X:\Coding\XMPPgate\dpr1219B\dpr\xmppGate.res */
-/* X:\Coding\XMPPgate\dpr1219B\dpr\xmppGate.drf */
+/* d:\program files\embarcadero\rad studio\11.0\lib\Win32\release\Controls.res */
+/* C:\Users\Сергей\Dropbox\SelfNik\Coding\dpr1121E5.8.EmpUtf\dpr\ufrmMemoEdit.dfm */
+/* C:\Users\Сергей\Dropbox\SelfNik\Coding\dpr1121E5.8.EmpUtf\dpr\Unit1.dfm */
+/* C:\Users\Сергей\Dropbox\SelfNik\Coding\dpr1121E5.8.EmpUtf\dpr\xmppGate.res */
+/* C:\Users\Сергей\Dropbox\SelfNik\Coding\dpr1121E5.8.EmpUtf\dpr\xmppGate.drf */

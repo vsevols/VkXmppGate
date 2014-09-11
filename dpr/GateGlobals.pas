@@ -6,25 +6,6 @@ uses
   System.Generics.Collections, System.RegularExpressions, System.Classes, System.SyncObjs, janXMLparser2;
 
 type
-  TAddrType = (adt_unknown, adt_user, adt_conference);
-  TGateAddressee = record
-  private
-    FId: string;
-    FFullId: string;
-    FIsDomain: Boolean;
-    FJid: string;
-    Ftyp: TAddrType;
-    procedure SetId(const Value: string);
-    procedure SetJid(Value: string);
-    procedure Parse(any: string; typ: TAddrType);
-  public
-    constructor Create(any: string; typ: TAddrType = adt_unknown);
-    property FullId: string read FFullId;
-    property Id: string read FId write SetId;
-    property IsDomain: Boolean read FIsDomain;
-    property Jid: string read FJid write SetJid;
-    property typ: TAddrType read Ftyp;
-  end;
   TObjProc = procedure of object;
   TVxCard = class;
   TVxCard = class(TComponent)
@@ -43,8 +24,6 @@ type
     sTo: string;
     dt: TDateTime;
     sType: string;
-    Delivered: boolean;
-    //don't forget to add member processing to Duplicate proc
     constructor Create(AOwner: TComponent = nil); override;
     function Duplicate: TGateMessage;
     function Reply(sBody: string): TGateMessage;
@@ -57,8 +36,7 @@ type
       procedure SetPath(const Value: string);
   public
       constructor Create(AOwner: TComponent);
-      function LoadBool(sName: string; bDefault: boolean): Boolean;
-      function LoadValue(const sName: string; sDefault: string = ''): string;
+      function LoadValue(const sName: string): string;
       function ReadInt(const sName: string; nDefault: Integer = 0): integer;
       procedure SaveValue(const sName, sVal: string);
       procedure WriteInt(const sName: string; nVal: Integer);
@@ -91,8 +69,6 @@ type
   end;
 
 
-  TMsgList = class(TObjectList<TGateMessage>)
-  end;
 
 
 
@@ -139,11 +115,15 @@ function HttpMethodRawByte(sUrl: string; bSsl: boolean; slPost: TStringList =
 
 function AnsiUnescapeToUtf16(sCode: string): string;
 
+function HTMLDecode(const AStr: String): String;
+
+function CPDecode(const AStr: String): String;
+
 const
   CR = #$d#$a;
-  SERVER_VER = '1219B1';
+  SERVER_VER = '1121E5.8.EmpUtf';
 
-  SUPPORTNAME='____XmppGate-Support';
+  SUPPORTNAME='__XmppGate-Support';
 
 var
   sDbgSend:string;
@@ -161,6 +141,41 @@ implementation
 uses
   System.SysUtils, IdHTTP, IdSSLOpenSSL, httpsend, ssl_openssl, Vcl.Dialogs,
   IdURI, Vcl.Forms, SHellApi, Windows, uvsDebug, System.DateUtils;
+
+function AnsiUnescapeToUtf16(sCode: string): string;
+var
+  nCode: Cardinal;
+begin                       //JS translated function convertCP2Char ( textString ) {
+  Result := sCode;
+
+  if (copy(sCode, 1,2)='&#')and(copy(sCode, length(sCode), 1)=';') then
+    sCode:=copy(sCode, 3, length(sCode)-3)
+    else
+      exit;
+
+  try
+    nCode:=StrToInt(sCode);
+  except
+    exit;
+  end;
+
+  if nCode<=$ffff then
+  begin
+    //Result:=Char(nCode)
+  end
+    else if nCode<=$10FFFF then
+    begin
+      nCode:=nCode-$10000;
+      //String.fromCharCode(0xD800 | (n >> 10)) + String.fromCharCode(0xDC00 | (n & 0x3FF));
+      nCode:=($d800 or (nCode shr 10))+($dc00 or (nCode and $3ff));
+    end
+      else
+        Result:=Format('UTF error:%d!', [nCode]);
+
+    Result:=Char(nCode);
+end;
+
+
 
 function FriendFind(search: TFriendList; sAddr: string): Integer;
 var
@@ -329,6 +344,90 @@ begin
 
   Result := str;
 end;
+
+
+function HTMLDecode(const AStr: String): String;
+
+resourcestring
+  sInvalidHTMLEncodedChar = 'Invalid HTML encoded character (%s) at position %d';
+
+var
+  Sp, Rp, Cp, Tp: PChar;
+  S: String;
+  I, Code: Integer;
+begin
+  SetLength(Result, Length(AStr));
+  Sp := PChar(AStr);
+  Rp := PChar(Result);
+  Cp := Sp;
+  try
+    while Sp^ <> #0 do
+    begin
+      case Sp^ of
+        '&': begin
+               Cp := Sp;
+               Inc(Sp);
+               case Sp^ of
+                 'a': if AnsiStrPos(Sp, 'amp;') = Sp then  { do not localize }
+                      begin
+                        Inc(Sp, 3);
+                        Rp^ := '&';
+                      end;
+                 'l',
+                 'g': if (AnsiStrPos(Sp, 'lt;') = Sp) or (AnsiStrPos(Sp, 'gt;') = Sp) then { do not localize }
+                      begin
+                        Cp := Sp;
+                        Inc(Sp, 2);
+                        while (Sp^ <> ';') and (Sp^ <> #0) do
+                          Inc(Sp);
+                        if Cp^ = 'l' then
+                          Rp^ := '<'
+                        else
+                          Rp^ := '>';
+                      end;
+                 'q': if AnsiStrPos(Sp, 'quot;') = Sp then  { do not localize }
+                      begin
+                        Inc(Sp,4);
+                        Rp^ := '"';
+                      end;
+                 '#': begin
+                        Tp := Sp;
+                        Inc(Tp);
+                        while (Sp^ <> ';') and (Sp^ <> #0) do
+                          Inc(Sp);
+                        SetString(S, Tp, Sp - Tp);
+                        Val(S, I, Code);
+                        if I >= $10000 then
+                        begin
+                          // Decode surrogate pair
+                          Rp^ := Char(((I - $10000) div $400) + $d800);
+                          Inc(Rp);
+                          Rp^ := Char(((I - $10000) and $3ff) + $dc00);
+                        end
+                        else
+                          Rp^ := Chr((I));
+                      end;
+                 else
+                   raise EConvertError.CreateFmt(sInvalidHTMLEncodedChar,
+                     [Cp^ + Sp^, Cp - PChar(AStr)])
+               end;
+           end
+      else
+        Rp^ := Sp^;
+      end;
+      Inc(Rp);
+      Inc(Sp);
+    end;
+  except
+    on E:EConvertError do
+      raise EConvertError.CreateFmt(sInvalidHTMLEncodedChar,
+        [Cp^ + Sp^, Cp - PChar(AStr)])
+  end;
+  SetLength(Result, Rp - PChar(Result));
+end;
+
+
+
 
 function AbsPath(const sRelative: string): string;
 begin
@@ -515,37 +614,62 @@ begin
   end;
 end;
 
-function AnsiUnescapeToUtf16(sCode: string): string;
+function CPDecode(const AStr: String): String;
+               //HTMLDecode -truncated version
+resourcestring
+  sInvalidHTMLEncodedChar = 'Invalid HTML encoded character (%s) at position %d';
+
 var
-  nCode: Cardinal;
-begin                       //JS translated function convertCP2Char ( textString ) {
-  Result := sCode;
-
-  if (copy(sCode, 1,2)='&#')and(copy(sCode, length(sCode), 1)=';') then
-    sCode:=copy(sCode, 3, length(sCode)-3)
-    else
-      exit;
-
+  Sp, Rp, Cp, Tp: PChar;
+  S: String;
+  I, Code: Integer;
+begin
+  SetLength(Result, Length(AStr));
+  Sp := PChar(AStr);
+  Rp := PChar(Result);
+  Cp := Sp;
   try
-    nCode:=StrToInt(sCode);
-  except
-    exit;
-  end;
-
-  if nCode<=$ffff then
-  begin
-    //Result:=Char(nCode)
-  end
-    else if nCode<=$10FFFF then
+    while Sp^ <> #0 do
     begin
-      nCode:=nCode-$10000;
-      //String.fromCharCode(0xD800 | (n >> 10)) + String.fromCharCode(0xDC00 | (n & 0x3FF));
-      nCode:=($d800 or (nCode shr 10))+($dc00 or (nCode and $3ff));
-    end
+      case Sp^ of
+        '&': begin
+               Cp := Sp;
+               Inc(Sp);
+               case Sp^ of
+                 '#': begin
+                        Tp := Sp;
+                        Inc(Tp);
+                        while (Sp^ <> ';') and (Sp^ <> #0) do
+                          Inc(Sp);
+                        SetString(S, Tp, Sp - Tp);
+                        Val(S, I, Code);
+                        if I >= $10000 then
+                        begin
+                          // Decode surrogate pair
+                          Rp^ := Char(((I - $10000) div $400) + $d800);
+                          Inc(Rp);
+                          Rp^ := Char(((I - $10000) and $3ff) + $dc00);
+                        end
+                        else
+                          Rp^ := Chr((I));
+                      end;
+                 else
+                   raise EConvertError.CreateFmt(sInvalidHTMLEncodedChar,
+                     [Cp^ + Sp^, Cp - PChar(AStr)])
+               end;
+           end
       else
-        Result:=Format('UTF error:%d!', [nCode]);
-
-    Result:=Char(nCode);
+        Rp^ := Sp^;
+      end;
+      Inc(Rp);
+      Inc(Sp);
+    end;
+  except
+    on E:EConvertError do
+      raise EConvertError.CreateFmt(sInvalidHTMLEncodedChar,
+        [Cp^ + Sp^, Cp - PChar(AStr)])
+  end;
+  SetLength(Result, Rp - PChar(Result));
 end;
 
 
@@ -564,7 +688,6 @@ begin
   Result.sTo:=sTo;
   Result.sType:=sType;
   Result.dt:=dt;
-  Result.Delivered:=Delivered;
 end;
 
 function TGateMessage.Reply(sBody: string): TGateMessage;
@@ -651,17 +774,7 @@ begin
   Path:=AbsPath('');
 end;
 
-function TGateStorage.LoadBool(sName: string; bDefault: boolean): Boolean;
-begin
-  Result:=bDefault;
-  if LoadValue(sName)='0' then
-    Result:=false;
-  if LoadValue(sName)='1' then
-    Result:=true;
-end;
-
-function TGateStorage.LoadValue(const sName: string; sDefault: string = ''):
-    string;
+function TGateStorage.LoadValue(const sName: string): string;
 var
   sl: TStringList;
 begin
@@ -670,7 +783,7 @@ begin
     sl.LoadFromFile(Path+sName+'.txt');
     Result:=Trim(sl.Text);
   except
-    Result:=sDefault;
+    Result:='';
   end;
   sl.Free;
 end;
@@ -704,7 +817,6 @@ end;
 
 procedure TGateStorage.SetPath(const Value: string);
 begin
-  GateLog('SetPath: '+Value);
   FPath := IncludeTrailingPathDelimiter(Value);
   ForceDirectories(FPath);
 end;
@@ -733,77 +845,6 @@ begin
   Result := TVxCard.Create(AOwner);
   Result.sUrl := Self.sUrl;
   Result.sPhotoUrl := Self.sPhotoUrl;
-end;
-
-constructor TGateAddressee.Create(any: string; typ: TAddrType = adt_unknown);
-begin
-  inherited;
-  Parse(any, typ);
-end;
-
-procedure TGateAddressee.SetId(const Value: string);
-begin
-  Parse(Value, typ);
-end;
-
-procedure TGateAddressee.SetJid(Value: string);
-begin
-  Parse(Value, typ);
-end;
-
-procedure TGateAddressee.Parse(any: string; typ: TAddrType);
-var
-  gotId: string;
-begin
-  FJid:='';
-  any:=Trim(any);
-  Ftyp:=adt_user;
-  FIsDomain:=false;
-
-  // if Pos('@')<>Pos('@vk.com') then
-  // raise ...
-  //TODO: how to be with incorrect domains?
-
-  gotId := GetRxGroup(any, '\Aid(\d+?)(?:@|\Z)', 1);
-  if gotId='' then
-  begin
-    gotId := GetRxGroup(any, '\Ac(\d+?)(?:@|\Z)', 1);
-    if gotId<>'' then
-      typ:=adt_conference;
-  end;
-
-  if gotId='' then
-  begin
-    gotId:=GetRxGroup(any, '([^\s]+?)(?:@|\Z)', 1);
-
-    try
-      if StrToInt(gotId)<0 then
-        typ:=adt_conference;
-    except
-      FIsDomain:=true;
-    end;
-  end;
-
-  if typ=adt_unknown then
-    typ:=adt_user;
-
-  //if gotId='' then
-    //TODO: (?) exception here
-    // seems like it is also simple to create reg.ex that will catch this error :)
-
-  Self.FId:=gotId;
-  Self.Ftyp:=typ;
-  if not IsDomain then
-    case typ of
-      adt_user:
-        FFullId:='id'+Id;
-      adt_conference:
-        FFullId:='c'+Id;
-    end
-    else
-      FFullId:=Id;
-
-  FJid:=FFullId+'@vk.com';
 end;
 
 
