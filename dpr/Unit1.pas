@@ -82,8 +82,13 @@ end;
 
 procedure TForm1.DecClients;
 begin
-  dec(ClientCount);
-  UpdateGui(false);
+  cs.Enter;
+
+  //Dec(ClientCount);
+  ClientCount:=core.Jab.tcp.Contexts.Count;
+  UpdateGui(true);
+
+  cs.Leave;
 end;
 
 procedure TForm1.FormClose(Sender: TObject; var Action: TCloseAction);
@@ -93,16 +98,16 @@ end;
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  isDbg:=false;
-//  isDbg:=true;
+  isDbg:=true;
+//  isDbg:=false;
   //bFakes:=true;
 
   //bLongPollLog:=true;
   //bVkApiLog:=true;
-  //bXmppLog:=true;
+  bXmppLog:=true;
 
-  if isDbg then
-    TempEmojiPack;
+ // if isDbg then
+   // TempEmojiPack;
 
   if not isDbg then
   begin
@@ -113,7 +118,7 @@ begin
   end;
 
 
-  xmlForm:=Self;
+  //xmlForm:=Self;
   Application.OnException:=AppException;
   Application.OnIdle:=AppIdle;
 
@@ -139,7 +144,7 @@ begin
    //Socket Error # 10060 Connection timed out
    //if Pos('10060', e.Message)<>0 then
 
-   GateLog(e.Message);
+   GateLog(Format('Sender: %s ; %s', [ToHex(Cardinal(Sender)), e.Message]));
 end;
 
 
@@ -174,8 +179,14 @@ end;
 
 procedure TForm1.IncClients;
 begin
-  inc(ClientCount);
+  cs.Enter;
+
+  ClientCount:=core.Jab.tcp.Contexts.Count;
+
+  //Inc(ClientCount);
   UpdateGui(true);
+
+  cs.Leave;
 end;
 
 procedure TForm1.InitTrayIcon;
@@ -291,9 +302,10 @@ procedure TForm1.UpdateGui(bInform: boolean);
 var
   sDbg: string;
 begin
+
   sDbg:=IfThen(isDbg, 'DBG', '');
-  Caption:=Format('v.%s %s Подключено клиентов: %d Порт: %d',
-    [SERVER_VER, sDbg, ClientCount, core.Jab.DefaultPort]);
+  Caption:=Format('v.%s %s Подключено клиентов: %d Контекстов: %d Порт: %d',
+    [SERVER_VER, sDbg, ClientCount, core.Jab.tcp.Contexts.Count, core.Jab.DefaultPort]);
   Application.Title:=Format('%d - XMPPGate', [ClientCount]);
   TrayIcon.Text:=IntToStr(ClientCount);
 

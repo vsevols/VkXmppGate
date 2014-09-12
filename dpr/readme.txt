@@ -1,2 +1,2 @@
-Built on Delphi XE4
+Built with Delphi XE4
 Needs Indy10

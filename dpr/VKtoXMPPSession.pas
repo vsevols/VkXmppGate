@@ -3,12 +3,15 @@ unit VKtoXMPPSession;
 interface
 
 uses
-  System.Classes, JabberServerSession, VKClientSession, GateGlobals, D7Compat;
+  System.Classes, JabberServerSession, VKClientSession, GateGlobals, D7Compat,
+  GateVkCaptcha;
 
 type
 
   TGtStatus = (gst_created, gst_vkauth, gst_online);
   TGtBotStatus = (bst_default, bst_getcode, bst_getcaptcha); // in forward-priority order
+
+
 
   TVKtoXmppSession = class(TComponent)
     procedure SupportRequestLog(msg: TGateMessage);
@@ -25,11 +28,19 @@ type
     botStatus: TGtBotStatus;
     dtCreated: TDateTime;
     dtHealth: TDateTime;
+    FAllIdleCount: Integer;
     Friends: TFriendList;
-    MarkMsgsRead: Boolean;
+    gsApp: TGateStorage;
+    //MarkMsgsRead: Boolean;
+    MarkMsgsRead2: string;   // replace of MarkMsgsRead
+    meFriend: TFriend;
     nHealthIdleCount: Integer;
     Persons: TFriendList;
     slAutoAnswered: TStringList;
+    slNotAnsweredMsgs: TStringList;
+    vkc: TGateVkCaptcha;
+    VkReceivedMsgs: TMsgList;
+    WallInRoster: Boolean;
     function IsOnline: Boolean;
     procedure LoadProfileData;
     procedure BotReadMessage(msg: TGateMessage);
@@ -40,7 +51,12 @@ type
     function DaytimeGreeting: string;
     function GetHelpList: string;
     procedure AutoAnswerIfNeeded(msg: TGateMessage);
+    function GetUidOrIp: string;
+    procedure IdleProcessCaptcha;
+    procedure MessageDelivered(msg: TGateMessage);
+    procedure OnReplyMarkRead(sJid: string; bRead, bForgetIds: Boolean);
     function OnXmppGetFriend(sAddr: string): TFriend;
+    procedure OnXmppStillAlive;
     procedure ProcessGetCode(msg: TGateMessage);
     procedure SetOnLog(const Value: TLogProc);
     function TranslateSupportAddr(msg: TGateMessage; bToReal: Boolean):
@@ -51,22 +67,32 @@ type
     destructor Destroy; override;
     procedure AddStdContacts(friends: TFriendList);
     function AutoAnsweredAdd(sFrom: string): Boolean;
+    procedure BotCheckSendNews;
     function BotProcessStrParam(sBody: string; const sParamName, sDescr: string;
         out sParamSet: string; AcceptVals: array of const): Boolean;
     procedure BotSendMessage(sBody: string; bSendLast: boolean = false);
+    function CanAutoAnswerTo(sFrom: string): Boolean;
     procedure CheckAbandoned;
     function InArray(arr: array of const; sVal: string): boolean;
     procedure LogLocal(const str: string);
+    function Min(a, b: Integer): Integer;
     procedure OnVkTokenNotify(bAuthorized: Boolean);
     procedure OnIdle;
     procedure OnIdleHealth;
+    procedure OnVkCaptchaAccepted;
     procedure OnVkCaptchaNeeded(sCaptchaSid, sImgUrl, sUrl5: string);
     procedure OnVkMessage(msg: TGateMessage);
     procedure OnXmppAuthorized(sLogin: string);
     function OnXmppCheckPass(sKey: string): Boolean;
     procedure OnXmppMessage(msg: TGateMessage);
+    procedure OnXmppPresShowChanged;
     function ProcessHotCommand(msg: TGateMessage; bToSupport: Boolean): Boolean;
+    function ProcessSysAddrMsg(msg: TGateMessage): Boolean;
     procedure UpdateContacts;
+    procedure VkAddNotAnsweredMsgs(msgs: TMsgList);
+    function VKSendMessage(msg: TGateMessage; bAutoMessage: boolean = false):
+        Boolean;
+    procedure XmppDoAskForVkAuthCode(const sAddRights: string);
     procedure XmppAskForVkAuthCode(bIncorrect: Boolean = false);
     property OnLog: TLogProc read FOnLog write SetOnLog;
   end;
@@ -75,11 +101,11 @@ implementation
 
 uses
   JanXmlParser2, Vcl.ExtCtrls, System.SysUtils, Vcl.Forms, uvsDebug,
-  System.DateUtils, System.StrUtils;
+  System.DateUtils, System.StrUtils, vkApi;
 
 const
-  //jidGateBot='xmppgate@vkxmpp.hopto.org';
-  jidGateBot='xmppgate';
+  jidGateBot='xmppgate@vkxmpp.hopto.org';
+  //jidGateBot='xmppgate';
 
 constructor TVKtoXmppSession.Create(AJabSession: TJabberServerSession);
 begin
@@ -95,20 +121,56 @@ begin
   JabSession.OnAuthorized:=OnXmppAuthorized;
   JabSession.OnIdle:=OnIdle;
   JabSession.OnGetFriend:=OnXmppGetFriend;
+  JabSession.OnPresShowChanged:=OnXmppPresShowChanged;
+  JabSession.OnStillAlive:=OnXmppStillAlive;
   Vk:=TVkClientSession.Create(Self);
   Vk.OnTokenNotify:=OnVkTokenNotify;
   Vk.OnMessage:=OnVkMessage;
   Vk.OnCaptchaNeeded:=OnVkCaptchaNeeded;
-  Persons := TFriendList.Create();
+  Vk.OnCaptchaAccepted:=OnVkCaptchaAccepted;
+
+
+
+  Persons := TFriendList.Create(true);
+  VkReceivedMsgs :=TMsgList.Create(true);
   slAutoAnswered := TStringList.Create();
+  vkc := TGateVkCaptcha.Create();
+  gsApp := TGateStorage.Create(Self);
+  slNotAnsweredMsgs := TStringList.Create();
 end;
 
 destructor TVKtoXmppSession.Destroy;
+var
+  step: string;
 begin
-  FreeAndNil(slAutoAnswered);
-  FreeAndNil(Persons);
-  OnLog(JabSession.sLogin+'='+JabSession.sKey+'; disconnected; IP='+JabSession.Context.Binding.PeerIP);
-  inherited;
+  try
+    step:='slNotAnsweredMsgs';
+    FreeAndNil(slNotAnsweredMsgs);
+    step:='meFriend';
+    FreeAndNil(meFriend);
+    step:='vkc';
+    FreeAndNil(vkc);
+    step:='slAutoAnswered';
+    FreeAndNil(slAutoAnswered);
+    step:='Persons';
+    FreeAndNil(gsApp);
+    step:='gsApp';
+
+    try
+      FreeAndNil(Persons);  //TODO: exception here!
+      step:='VkReceivedMsgs';
+    finally
+      FreeAndNil(VkReceivedMsgs);
+    end;
+  except on e:Exception do
+    OnLog(Format('TVKtoXmppSession.Destroy EXCEPTION! step: %s ; %s', [step, e.Message]));
+  end;
+  OnLog(JabSession.sLogin+'='+JabSession.sKey+'; TVKtoXmppSession destroyed; IP='+JabSession.Context.Binding.PeerIP);
+  try
+    inherited;
+  except
+    OnLog(('TVKtoXmppSession.Destroy EXCEPTION in inherited!'));
+  end;
 end;
 
 procedure TVKtoXmppSession.AddStdContacts(friends: TFriendList);
@@ -130,12 +192,21 @@ begin
 
   friends.Add(fr);
 
-  if vk.Uid<>'' then
+  if not Assigned(meFriend) then
+    try
+      meFriend:=OnXmppGetFriend(vk.VkIdToJid(vk.Uid));
+      //Done: optimize. Seems like this is reason of users.get big count
+    except
+    end;
+
+  if Assigned(meFriend) then
+    friends.Add(meFriend.Duplicate);
+
+  if WallInRoster then
   begin
     fr:=TFriend.Create;
-    fr.sAddr:=Vk.VkIdToJid(vk.Uid, false);
-    fr.sFullName:=IfThen(vk.sFullName<>'', vk.sFullName, '____me');
-    fr.sGroup:='VK.COM';
+    fr.sAddr:='wall@vk.com';
+    fr.sFullName:='Моя стена ВК';
     fr.Presence:=fp_online;
 
     friends.Add(fr);
@@ -166,24 +237,27 @@ var
   sl: TStringList;
   sVal: string;
 begin
+  Vk.Permissions:=profile.LoadValue('permissions', 'messages,offline');
   Vk.ApiToken:=Trim(Profile.LoadValue('token'));
 
   try
-    Vk.SetLastMessageId(
+    Vk.PrepareLastMessageId(
       StrToInt(Profile.LoadValue('LastVkMessId')), true
       );
   except
   end;
-
+             {
   if profile.LoadValue('alwaysmarkread')='0' then
     MarkMsgsRead:=false
     else
       MarkMsgsRead:=true;
+              }
+  MarkMsgsRead2:=profile.LoadValue('readmark', 'onreply');
 
-  if profile.LoadValue('skipmarkedread')='0' then
-    Vk.bSkipMarkedRead:=false
+  if profile.LoadValue('skipmarkedread')='1' then
+    Vk.bSkipMarkedRead:=true
     else
-      Vk.bSkipMarkedRead:=true;
+      Vk.bSkipMarkedRead:=false;
 
   if profile.LoadValue('ismobileclient')='1' then
     Vk.IsMobileClient:=true
@@ -207,6 +281,13 @@ begin
     else
       AwayAnswer:=sVal;
 
+
+
+
+  WallInRoster:=profile.LoadBool('wallinroster', false);
+
+  slNotAnsweredMsgs.Text:=profile.LoadValue('notAnsweredMsgs');
+  
   Vk.Emoji.SetTable(profile.LoadValue('emotable'));
 
 end;
@@ -227,13 +308,6 @@ begin
     exit;
   end;
 
-  if botStatus=bst_getcaptcha then
-  begin
-    botStatus:=bst_default;
-    vk.RespondCaptcha(Trim(msg.sBody));
-    exit;
-  end;
-
   if LowerCase(Trim(msg.sBody))='resettoken' then
   begin
     Profile.SaveValue('token', '');
@@ -241,19 +315,33 @@ begin
     exit;
   end;
 
-  if LowerCase(Trim(msg.sBody))='versioninfo' then
+  if LowerCase(Trim(msg.sBody))='resetscope' then
   begin
-    BotSendMessage('Версия шлюза VKXMPP : '+SERVER_VER);
-  {
-    rpl:=msg.Reply('Версия шлюза VKXMPP : '+SERVER_VER);
-    try
-    JabSession.SendMessage(rpl);
-    finally
-      rpl.Free;
-    end; }
+    Profile.SaveValue('permissions', '');
+    XmppAskForVkAuthCode;
     exit;
   end;
 
+  if LowerCase(Trim(msg.sBody))='whatsnew' then
+  begin
+    BotSendMessage(gsApp.LoadValue('whatsnew', ''));
+    exit;
+  end;
+
+  if botStatus=bst_getcaptcha then
+  begin
+    botStatus:=bst_default;
+    vk.RespondCaptcha(Trim(msg.sBody));
+    exit;
+  end;
+
+
+  if LowerCase(Trim(msg.sBody))='versioninfo' then
+  begin
+    BotSendMessage('Версия шлюза VKXMPP : '+SERVER_VER);
+    exit;
+  end;
+  {
   if 'alwaysmarkread=1'=Trim(msg.sBody) then
   begin
     profile.SaveValue('alwaysmarkread', '1');
@@ -267,6 +355,13 @@ begin
     profile.SaveValue('alwaysmarkread', '0');
     BotSendMessage('Сообщения маркируются прочитанными выкл.', true);
     MarkMsgsRead:=false;
+    exit;
+  end;
+   }
+  if BotProcessStrParam(msg.sBody, 'readmark', 'Маркировка сообщений прочитанными',
+    sParamSet, ['all', 'onreply', 'none']) then
+  begin
+    MarkMsgsRead2:=sParamSet;
     exit;
   end;
 
@@ -337,6 +432,10 @@ begin
     exit;
     
   end;
+
+  if BotProcessBooleanFlag(msg.sBody, 'wallinroster',
+    'Отображение контакта "Моя Стена"', WallInRoster) then
+    exit;
   
 
   if 'help'=Trim(msg.sBody) then
@@ -360,7 +459,7 @@ begin
     BotSendMessage(
       Format('Вас приветствует шлюз VKXMPPGate версия %s. Профиль %s', [SERVER_VER, JabSession.sLogin]));
     BotSendMessage(
-      'Сервис находится в стадии тестирования.'+CR+
+      //'Сервис находится в стадии тестирования.'+CR+
       Format('%stopic-58410860_28964830 - Часто Задаваемые Вопросы', [Vk.GetVkUrl])+CR+
       Format('%stopic-58410860_28931059 - Для отображения всех смайликов установите пак', [Vk.GetVkUrl])+CR+
       'Если не удаётся подключиться, пишите:'+CR+
@@ -378,7 +477,7 @@ begin
       BotSendMessage('Вы подключились повторно.'+CR+
         'Возможно Вам будут интересны следующие поддерживаемые команды:'+CR
          +GetHelpList+CR+
-        'Адрес бота: xmppgate'+CR+
+        'Адрес бота: '+jidGateBot+CR+
         'Не стесняйтесь писать на адреса тех.поддержки и оставлять комментарии:'+CR+
         'http://vsevols.livejournal.com/11841.html'
           );
@@ -386,6 +485,7 @@ begin
 
     inc(nTimes);
     profile.WriteInt('timesConnected', nTimes);
+
 end;
 
 function TVKtoXmppSession.BotProcessBooleanFlag(sBody, sFlagName, sFlagDescr:
@@ -467,17 +567,23 @@ begin
   Result := CR+
   'Версия шлюза: '+SERVER_VER+CR+
   'Сервер: '+ServName+CR+
+  'whatsnew         //Новые возможности сервиса'+CR+
   'resettoken       //Если всё работало, а потом перестало. Очистить(пересоздать) привязку к профилю ВК.'+CR+
   Format('alwaysmarkread=0 //Не помечать в %sim прочитанными сообщения получаемые здесь', [vk.GetVkUrl])+CR+
-  //Format('readmark=(all|onreply|none) //Не помечать получаемые сообщения прочитанными в %sim', [vk.GetVkUrl])+CR+
+  Format('readmark=(all|onreply|none) //Не помечать получаемые сообщения прочитанными в %sim', [vk.GetVkUrl])+CR+
   'skipmarkedread=0 //Получать все новые сообщения, даже если они уже помечены как прочитанные'+CR+
   'ismobileclient=1 //Включить режим мобильного телефона'+CR+
   'invisible=1      //Не устанавливать статус online ВКонтакте'+CR+
   'ignorechats=1    //Игнорировать сообщения из многопользовательских конференций'+CR+
+  'awayanswer=(full|short|off)   //Автоответчик если статус в клиенте неактивный'+CR+
   Format('emotable=VkEmojiGroup  //Выбор таблицы перекодировки эмотиконов. См. обсуждение %stopic-58410860_28931059', [Vk.GetVkUrl])+CR+
+  'resetscope //Получить токен с минимальными правами: messages,offline'+CR+
   'help //Вывести список доступных команд'+CR+
   '.info  //Команда, которую можно набирать в диалогах с пользователями.'+CR+CR+
-  Format('%stopic-58410860_28976140 - Список-описание команд встроенного бота', [Vk.GetVkUrl]);
+  Format('%stopic-58410860_28976140 - Список-описание команд встроенного бота', [Vk.GetVkUrl])+CR+
+  CR+
+  'Дополнительные фичи (требуют добавления прав):'+CR+
+  'wallinroster=1   //Отобразить контакт "Моя Стена" для отправки сообщений на стену';
 end;
 
 procedure TVKtoXmppSession.LogLocal(const str: string);
@@ -502,9 +608,21 @@ end;
 
 procedure TVKtoXmppSession.OnIdle;
 begin
+  inc(FAllIdleCount);
+
+//  GateLog(Format('%d gs.path=%s', [FAllIdleCount, gs.Path]));
 
   CheckAbandoned;
   OnIdleHealth;
+
+  if (FAllIdleCount mod 5)=0 then
+  begin
+    try
+      IdleProcessCaptcha;
+    except on e:Exception do
+      Log('IdleProcessCaptcha uncaught exception: '+e.Message);
+    end;
+  end;
 
   if IsOnline() then
   begin
@@ -520,14 +638,16 @@ begin
       UpdateContacts;
     end;
 
-    if Vk.ProcessNewMessages then
-      Profile.SaveValue('LastVkMessId', IntToStr(vk.IdLastMessage));
+    Vk.ProcessNewMessages;
+    //if Vk.ProcessNewMessages then
+      //Profile.SaveValue('LastVkMessId', IntToStr(vk.IdLastMessage));
 
     if (FIdleCount mod 3)=0 then
     begin
       //vk.CheckNewMessages;
       //Profile.SaveValue('LastVkMessId', IntToStr(vk.IdLastMessage));
     end;
+
 
     if sDbgSend<>'' then
     begin
@@ -583,6 +703,9 @@ begin
   if msg.sType='groupchat' then
     exit;
 
+  if not CanAutoAnswerTo(msg.sFrom) then
+    exit;
+
   if not AutoAnsweredAdd(msg.sFrom) then
     exit;
 
@@ -614,11 +737,12 @@ begin
       )
     );
   try
-    vk.SendMessage(msgRepl);
+    VKSendMessage(msgRepl, true);
     Log(Format('autoanswer to %s : %s', [msgRepl.sTo, msgRepl.sBody]));
   finally
     msgRepl.Free;
   end;
+
 end;
 
 function TVKtoXmppSession.AutoAnsweredAdd(sFrom: string): Boolean;
@@ -629,6 +753,33 @@ begin
 
   slAutoAnswered.Add(sFrom+'=');
   Result:=true;
+end;
+
+procedure TVKtoXmppSession.BotCheckSendNews;
+var
+  sl: TStringList;
+  sStamp: string;
+begin
+  sl:=TStringList.Create;
+  try
+    sl.Text:=gsApp.LoadValue('forcedNews');
+    if sl.Count>0 then
+      sStamp:=Trim(sl.Strings[0])
+      else
+        sStamp:='';
+
+    if sStamp='' then
+      exit;
+
+    if sStamp=profile.LoadValue('LastForcedNewsId') then
+      exit;
+
+    sl.Delete(0);
+    BotSendMessage(sl.Text);
+    profile.SaveValue('LastForcedNewsId', sStamp);
+  finally
+    FreeAndNil(sl);
+  end;
 end;
 
 function TVKtoXmppSession.BotProcessStrParam(sBody: string; const sParamName,
@@ -646,10 +797,64 @@ begin
   if InArray(AcceptVals, sVal) then
   begin
     profile.SaveValue(sParamName, sVal);
-    BotSendMessage(sDescr+' изменен', true);
+    BotSendMessage(sDescr+' -параметр изменен', true);
     sParamSet:=sVal;
     Result:=true;
   end;
+end;
+
+function TVKtoXmppSession.CanAutoAnswerTo(sFrom: string): Boolean;
+begin
+  // groupchat considered separately when address translated
+  // to msg.sType=groupchat
+  Result:=sFrom<>'wall@vk.com';
+end;
+
+function TVKtoXmppSession.GetUidOrIp: string;
+var
+  sUidOrIp: string;
+begin
+  sUidOrIp:=vk.Uid;
+  if sUidOrIp='' then
+  begin
+    sUidOrIp:=Profile.LoadValue('uid');
+  end;
+
+  if sUidOrIp='' then
+  begin
+    sUidOrIp:=JabSession.Context.Binding.PeerIP;
+  end;
+
+  Result:=sUidOrIp;
+end;
+
+procedure TVKtoXmppSession.IdleProcessCaptcha;
+var
+  sCapKey: string;
+begin
+
+  if (not vkc.IsProcessing) then
+  begin
+    if (vk.sCaptchaSid<>'') then
+    begin
+      vk.bSilentCaptchaFill:=true;
+      try vk.VkApiCallFmt('users.get', '', []).Free;except end;
+      vk.bSilentCaptchaFill:=false;
+
+      if vk.sSilCaptchaSid<>'' then
+        vkc.CaptchaKeyRequested(GetUidOrIp, vk.sSilCaptchaUrl, vk.sSilCaptchaSid, profile.Path);
+    end;
+  end
+  else
+    begin
+      sCapKey:=vkc.TryGetKey;
+      if sCapKey<>'' then
+      begin
+        vkc.KeyAccepted;
+        Vk.sCaptchaSid:=vkc.CaptchaSid;
+        Vk.RespondCaptcha(sCapKey);
+      end;
+    end;
 end;
 
 function TVKtoXmppSession.InArray(arr: array of const; sVal: string): boolean;
@@ -658,8 +863,10 @@ var
 begin
   Result:=true;
 
+  I:=Ord(arr[i].VType);
+
   for I := Low(arr) to High(arr) do
-    if (arr[i].VType=vtWideString)and(sVal=PWideChar(arr[I].VWideString)) then
+    if (arr[i].VType=vtUnicodeString)and(sVal=PWideChar(arr[I].VUnicodeString)) then
       exit;
 
   Result:=false;
@@ -667,6 +874,9 @@ end;
 
 procedure TVKtoXmppSession.OnVkCaptchaNeeded(sCaptchaSid, sImgUrl, sUrl5:
     string);
+var
+  gs: TGateStorage;
+  sUidOrIp: string;
 begin
 
   if VkCaptchaRevertIfNeeded(sCaptchaSid, sImgUrl) then
@@ -679,36 +889,44 @@ begin
   BotSendMessage(
 
     Format(
-    'Пройдите валидацию по ссылке %s и отправьте боту адрес итоговой страницы ИЛИ Введите текст изображённый на картинке: %s'+CR+
+    'Пройдите валидацию по ссылке %s и отправьте боту адрес итоговой страницы ИЛИ Введите текст изображённый на картинке (лучше обновите в браузере дважды): %s'+CR+
     'Сервер: %s'+cr+
-    'Часто задаваемые вопросы: %stopic-58410860_28964830'
+    'Часто задаваемые вопросы: %stopic-58410860_28964830 16 ВОПРОС. Если ничего не помогло отправьте сюда команду resettoken'
     ,
       [sUrl5, sImgUrl, ServName, vk.GetVkUrl]), true);
 
     // http://vk.com/dev/need_validation
+
+
 end;
 
 procedure TVKtoXmppSession.OnVkMessage(msg: TGateMessage);
 var
   msgSend: TGateMessage;
 begin
+
+  if msg.sType<>'typing' then
+    VkReceivedMsgs.Add(msg.Duplicate);
+
   try
     msgSend:=TranslateSupportAddr(msg, false);
     JabSession.SendMessage(msgSend);
-    if MarkMsgsRead then
-      Vk.MsgMarkAsRead(msg.sId);
+    if msg.sType='typing' then
+      exit;
 
     AutoAnswerIfNeeded(msg);
 
   finally
     msgSend.Free;
   end;
-  Vk.SetLastMessageId(StrToInt(msg.sId));
+
+  Vk.PrepareLastMessageId(StrToInt(msg.sId));
+  JabSession.AliveTested:=False;
 end;
 
 procedure TVKtoXmppSession.OnXmppAuthorized(sLogin: string);
 begin
-
+   BotCheckSendNews;
   //if Vk.ApiToken='' then
     //XmppAskForVkAuthCode;
 end;
@@ -740,8 +958,10 @@ begin
   if Assigned(Friends) then
     Result := Friends.FindByAddr(sAddr);
 
-  if not Assigned(Result) then
-    Result:=Persons.FindByAddr(sAddr);
+  if Assigned(Result) then
+    exit;
+
+  Result:=Persons.FindByAddr(sAddr);
 
   if not Assigned(Result) then
   begin
@@ -749,6 +969,12 @@ begin
     if Assigned(Result) then
       Persons.Add(Result);
   end;
+      {
+  if sAddr<>'id'+vk.Uid+'@vk.com' then
+  begin
+    Result.sFullName:=Result.sFullName+' НЕ_В_ДРУЗЬЯХ';
+    Result.sGroup:='VK.COM-others'
+  end; }
 end;
 
 procedure TVKtoXmppSession.OnXmppMessage(msg: TGateMessage);
@@ -758,12 +984,13 @@ var
   msgSend: TGateMessage;
   repl: TGateMessage;
 begin
+  msg.sTo:=Trim(msg.sTo);
 
-  if (msg.sTo='xmppgate') or (msg.sTo='xmppgate@'+JabSession.sServerName) then
+  if (msg.sTo=jidGateBot) or (msg.sTo='xmppgate') then
   begin
     BotReadMessage(msg);
     exit;
-  end;
+  end;          // ? incaps to ProcessSysAddrMsg
 
   try
     msgSend:=TranslateSupportAddr(msg, true);
@@ -772,28 +999,43 @@ begin
     try
       if ProcessHotCommand(msgSend, bToSupport) then
         exit;
-      bSent:=Vk.SendMessage(msgSend);
+      if ProcessSysAddrMsg(msgSend) then
+        exit;
+
+      bSent:=VkSendMessage(msgSend);
+
+
+
+
     except on e:EXception do
       if not bToSupport then
         raise
         else
-          OnLog('Vk.SendMessage ERROR: '+e.Message);
+        begin
+          OnLog('OnXmppMessage ERROR: '+e.Message);
+        end;
     end;
 
     if not bSent then
     begin
       if not bToSupport then
-        JabSession.SendingUnavailable(msg)
+      begin
+        JabSession.SendingUnavailable(msg);
+        repl:=Msg.Reply('VkXmppGate: Ваше сообщение не доставлено.');
+        JabSession.SendMessage(repl);
+        repl.Free;
+      end
         else
         begin
           SupportRequestLog(msg);
           repl:=msg.Reply(
-            'Вы отправили запрос в тех.поддержку. Укажите пожалуйста контакты для обратной связи.'
+            'Вы отправили запрос в тех.поддержку. Укажите пожалуйста контакты для обратной связи. Например ссылку на свою страницу ВК'
             );
 
           if Trim(repl.sTo)='' then
             repl.sTo:=JabSession.sJid;
           JabSession.SendMessage(repl);
+          repl.Free;
         end;
 
     end;
@@ -817,7 +1059,9 @@ begin
             );
 
           Profile.SaveValue('token', vk.ApiToken);
-          Profile.SaveValue('uid', vk.uid);
+
+          if vk.uid<>'' then
+            Profile.SaveValue('uid', vk.uid);
         end;
 
 end;
@@ -826,6 +1070,7 @@ function TVKtoXmppSession.ProcessHotCommand(msg: TGateMessage; bToSupport:
     Boolean): Boolean;
 var
   fr: TFriend;
+  sAppName: string;
   sCid: string;
   sM: string;
 begin
@@ -836,29 +1081,40 @@ begin
 
   if Trim(msg.sBody)='.info' then
   begin
+    //TODO: needs refactoring since we have TGateAddressee class
+    //TODO: create TGateAddressee.ProfileUrl;DialogUrl
+
     Result := true;
     sM:=IfThen(Vk.IsMobileClient, 'm.', '');
-    fr:=vk.GetPerson(msg.sTo);
+    fr:=OnXmppGetFriend(msg.sTo);
 
     try
       if Assigned(fr) then
       begin
+        sAppName:=
+        IfThen(fr.AppId='3842439', 'VkXmppGate', fr.AppId);
+        sAppName:=
+        IfThen(fr.AppId='3881289', 'VkXmppGate(альт.сборка)', sAppName);
+        sAppName:=
+        IfThen(fr.AppId='4166906', 'VkXmppGate сервер SkyNet', sAppName);
+
         JabSession.SendMessage(msg.sTo,
           'VkXmppGate:'+CR+
           ' '+fr.sFullName+CR+
-          Format(' Профиль: http://%svk.com/id%s', [sM, Vk.JIdToVkUid(msg.sTo)])+CR+
-          Format(' Диалог: http://%svk.com/im?sel=%s', [sM, Vk.JIdToVkUid(msg.sTo)])
+          Format(' Профиль: http://%svk.com/%s', [sM, TGateAddressee.Create(msg.sTo).FullId])+CR+
+          Format(' Диалог: http://%svk.com/im?sel=%s', [sM, TGateAddressee.Create(msg.sTo).Id])
+          +IfThen(fr.IsMobile, CR+' Собеседник использует мобильную версию.', '')
+          +IfThen(sAppName<>'', CR+' Приложение собеседника: '+sAppName, '')
           );
       end
         else
         begin
-          sCid:=vk.JidToChatId(msg.sTo);
-          if sCid='' then
+          if TGateAddressee.Create(msg.sTo).typ<>adt_conference then
             exit;
 
           JabSession.SendMessage(msg.sTo,
             'VkXmppGate:'+CR+
-            Format(' Конференция: http://%svk.com/im?sel=c%s', [sM, Vk.JIdToChatId(msg.sTo)])
+            Format(' Конференция: http://%svk.com/im?sel=', [sM, TGateAddressee.Create(msg.sTo).FullId])
             );
         end;
     finally
@@ -877,6 +1133,116 @@ end;
 procedure TVKtoXmppSession.Log(const sLog:string);
 begin
   OnLog(JabSession.sLogin+'='+JabSession.sKey+';'+sLog);
+end;
+
+function TVKtoXmppSession.Min(a, b: Integer): Integer;
+begin
+  if a<b then
+    Result := a
+    else
+      Result:=b;
+end;
+
+procedure TVKtoXmppSession.MessageDelivered(msg: TGateMessage);
+begin
+  if msg.sId='' then
+    exit; //not from VK
+
+  if MarkMsgsRead2='all' then
+      Vk.MsgMarkAsRead(msg.sId);
+end;
+
+procedure TVKtoXmppSession.OnReplyMarkRead(sJid: string; bRead, bForgetIds:
+    Boolean);
+begin
+  if slNotAnsweredMsgs.Values[sJid]<>'' then
+  begin
+    vk.MsgMarkAsRead(
+      TGateAddressee.Create(sJid).Id,
+      slNotAnsweredMsgs.Values[sJid],
+      bRead
+      );
+    if bForgetIds then
+    begin
+      slNotAnsweredMsgs.Values[sJid]:='';
+      profile.SaveValue('notAnsweredMsgs', slNotAnsweredMsgs.Text);
+    end;
+  end;
+end;
+
+procedure TVKtoXmppSession.OnVkCaptchaAccepted;
+begin
+  if vk.uid='' then
+    vk.QueryUserInfo;
+
+  if vk.uid<>'' then
+    Profile.SaveValue('uid', vk.uid);
+
+  BotSendMessage('Заработало! Валидация/капча больше не требуется.', true);
+end;
+
+procedure TVKtoXmppSession.OnXmppStillAlive;
+var
+  bDeliveredNow: Boolean;
+  I: Integer;
+begin
+
+  bDeliveredNow:=False;
+
+  for I := 0 to VkReceivedMsgs.Count-1 do
+  begin
+    if not VkReceivedMsgs.Items[I].Delivered then
+    begin
+      MessageDelivered(VkReceivedMsgs.Items[I]);
+      VkReceivedMsgs.Items[I].Delivered:=true;
+      bDeliveredNow:=True;
+    end;
+  end;
+
+  if MarkMsgsRead2='onreply' then
+    VkAddNotAnsweredMsgs(VkReceivedMsgs);
+
+  VkReceivedMsgs.Clear;
+
+  //Check for storage optimization
+  //TODO: incapsulate to GateStorage
+  if bDeliveredNow then
+    Profile.SaveValue('LastVkMessId', IntToStr(vk.IdLastMessage));
+
+end;
+
+procedure TVKtoXmppSession.OnXmppPresShowChanged;
+begin
+  // TODO -cMM: TVKtoXmppSession.OnXmppPresShowChanged default body inserted
+end;
+
+function TVKtoXmppSession.ProcessSysAddrMsg(msg: TGateMessage): Boolean;
+const
+EVK_RIGHTS = 7;
+var
+  msgRepl: TGateMessage;
+begin
+  Result:=false;
+
+  if msg.sTo='wall@vk.com' then
+  begin
+    Result:=true;
+    try
+      vk.WallPost(msg);
+      msgRepl:=msg.Reply('Сообщение опубликовано на Вашей стене.');
+      try
+        JabSession.SendMessage(msgRepl);
+      finally
+        msgRepl.Free;
+      end;
+    except on e:EVkApi do
+      if e.Error=EVK_RIGHTS then
+      begin
+        XmppDoAskForVkAuthCode('wall');
+        raise;
+      end;
+    end;
+  end;
 end;
 
 procedure TVKtoXmppSession.SupportRequestLog(msg: TGateMessage);
@@ -940,22 +1306,91 @@ begin
     friends.Free;
 end;
 
-procedure TVKtoXmppSession.XmppAskForVkAuthCode(bIncorrect: Boolean = false);
+procedure TVKtoXmppSession.VkAddNotAnsweredMsgs(msgs: TMsgList);
+var
+  I: Integer;
+  sPrev: string;
 begin
-  BotCheckSendGreeting;
+  sPrev:=Trim(slNotAnsweredMsgs.Text);
 
+  for I := 0 to msgs.Count-1 do
+    if msgs.Items[i].sId<>'' then
+    begin
+      //if slNotAnsweredMsgs.Values[msgs.Items[i].sFrom]='' then
+        //slNotAnsweredMsgs.Add(msgs.Items[i].sFrom);   //TODO: !!or not needed??
+
+      if TGateAddressee.Create(msgs.Items[i].sTo).typ=adt_conference then
+        continue;
+        //I didn't found the way to call messages.markAsRead for
+        // conferences without message_ids param
+
+
+      slNotAnsweredMsgs.Values[msgs.Items[i].sFrom]:=
+        IntToStr(
+          Min(
+              StrToIntDef(msgs.Items[i].sId, MaxInt),
+              StrToIntDef(slNotAnsweredMsgs.Values[msgs.Items[i].sFrom], MaxInt)
+            )
+            );
+    end;
+
+  if sPrev<>Trim(slNotAnsweredMsgs.Text) then
+    profile.SaveValue('notAnsweredMsgs', slNotAnsweredMsgs.Text);
+end;
+
+function TVKtoXmppSession.VKSendMessage(msg: TGateMessage; bAutoMessage:
+    boolean = false): Boolean;
+begin
+  Result:=Vk.SendMessage(msg);
+
+  if not Result then
+    exit;
+
+  if (MarkMsgsRead2<>'always') or
+    ((MarkMsgsRead2='onreply') and bAutoMessage) then
+      OnReplyMarkRead(msg.sTo, false, false);
+
+  if MarkMsgsRead2='none' then
+    OnReplyMarkRead(msg.sTo, false, true);
+
+end;
+
+procedure TVKtoXmppSession.XmppDoAskForVkAuthCode(const sAddRights: string);
+begin
   botStatus:=bst_getcode;
-  if bIncorrect then
-    BotSendMessage('Не удалось пройти аутентификацию VK');
+
+  if sAddRights<>'' then
+  begin
+    vk.Permissions:=vk.Permissions+','+sAddRights;
+    profile.SaveValue('permissions', vk.Permissions);
+    BotSendMessage(
+          'Вы сделали попытку воспользоваться расширенными функциями шлюза.'+CR+
+          'Необходимо повышение прав доступа к Вашему профилю ВК.'+CR+
+          'В список прав добавлены: '+sAddRights+CR+
+          'Команда сброса списка прав к минимальному: resetscope'+CR+
+          'После получения нового токена повторите неудавшееся действие.'
+          );
+  end;
+
 
   BotSendMessage(
     Format(
       '1. Нажмите на ссылку.'+CR+
       '2. Подтвердите  доступ.'+CR+
       '3. Скопируйте и отправьте сюда адрес итоговой страницы'+CR+
-      'https://oauth.vk.com/authorize?client_id=%s&redirect_uri=https://oauth.vk.com/blank.html&scope=messages,offline&display=wap&responce_type=token',
-        [Vk.sApiClientId])
+      'https://oauth.vk.com/authorize?client_id=%s&redirect_uri=https://oauth.vk.com/blank.html&scope=%s&display=wap&responce_type=token',
+        [Vk.sApiClientId, vk.Permissions])
           , true);
+end;
+
+procedure TVKtoXmppSession.XmppAskForVkAuthCode(bIncorrect: Boolean = false);
+begin
+  BotCheckSendGreeting;
+
+  if bIncorrect then
+    BotSendMessage('Не удалось пройти аутентификацию VK');
+
+  XmppDoAskForVkAuthCode('');
 end;
 
 end.

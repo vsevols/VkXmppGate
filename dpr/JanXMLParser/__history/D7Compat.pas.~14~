@@ -1,0 +1,93 @@
+unit D7Compat;
+
+interface
+type
+  D7String = AnsiString;
+ // origString = D7String; // less pretty alias
+  D7Char = AnsiChar;
+  D7PChar = PAnsiChar;
+  {$define D7STRS='ANSI'}
+  // {$define D7STRS='WIDE'}
+
+function ToApiPChar(s: D7String): PChar; overload;
+
+function ToD7PChar(s: D7String): D7PChar; overload;
+
+function CharToAnsiChar(Ch: Char): AnsiChar; inline;
+
+function AnsiCharToChar(Ch: AnsiChar): Char; inline;
+
+type
+  TStrDynArray = array of string;
+var
+  DecimalSeparator:D7Char;
+  DateSeparator:D7Char;
+  ShortDateFormat:D7String;
+  TimeSeparator:D7Char;
+  ShortTimeFormat:D7String;
+  ShortMonthNames: TStrDynArray;
+
+
+
+implementation
+
+uses
+  System.SysUtils;
+
+procedure InitXe4WorkAround;
+var
+  fs: TFormatSettings;
+
+begin
+  fs:=TFormatSettings.Create;
+  DecimalSeparator:=CharToAnsiChar(fs.DecimalSeparator);
+  DateSeparator:=CharToAnsiChar(fs.DateSeparator);
+  ShortDateFormat:=fs.ShortDateFormat;
+  TimeSeparator:=CharToAnsiChar(fs.TimeSeparator);
+  ShortTimeFormat:=fs.ShortTimeFormat;
+  ShortMonthNames:=copy(fs.ShortMonthNames, 1, 12));
+
+  //fs:=nil; // TODO: Как корректно освободить?
+end;
+
+function ToApiPChar(s: D7String): PChar;
+begin
+  Result := PWideChar(WideString(s));
+end;
+
+function CharToAnsiChar(Ch: Char): AnsiChar;
+begin
+{$IFDEF UNICODE}
+  Result := AnsiString(Ch)[1];
+{$ELSE}
+  Result := Ch;
+{$ENDIF}
+end;
+
+function AnsiCharToChar(Ch: AnsiChar): Char;
+begin
+{$IFDEF UNICODE}
+  Result := string(Ch)[1];
+{$ELSE}
+  Result := Ch;
+{$ENDIF}
+end;
+
+function ToD7PChar(s: D7String): D7PChar;
+begin
+  {$if D7STRS='ANSI'}
+  Result := D7PChar(AnsiString(s));
+  {$endif}
+  {$if D7STRS='WIDE'}
+  Result := D7PChar(WideString(s));
+  {$endif}
+end;
+
+
+initialization
+begin
+  InitXe4WorkAround
+end;
+
+
+end.

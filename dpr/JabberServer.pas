@@ -8,7 +8,7 @@ interface
 
 uses
   IdExplicitTLSClientServerBase, IdContext, System.Classes,
-  JabberServerSession, IdTCPServer, System.SysUtils;
+  JabberServerSession, IdTCPServer, System.SysUtils, GateGlobals;
 
 type
   TJabberServer = class(TComponent)
@@ -26,6 +26,7 @@ type
     constructor Create(AOwner: TComponent);
     destructor Destroy; override;
     procedure InternalOnDisconnect(AContext: TIdContext);
+    procedure InternalOnConnect(AContext: TIdContext);
     procedure OnTcpException(AContext: TIdContext; AException: Exception);
     property Active: Boolean read FActive write SetActive;
     property DefaultPort: Integer read FDefaultPort write SetDefaultPort;
@@ -43,12 +44,13 @@ begin
   tcp:=TIdTcpServer.Create(Self);
   tcp.OnException:=OnTcpException;
   DefaultPort:=5222;
-  tcp.MaxConnections:=200;
+  //tcp.MaxConnections:=200;
 
   tcp.DefaultPort:=DefaultPort;
 
   tcp.OnExecute:=Execute;
   tcp.OnDisconnect:=InternalOnDisconnect;
+  tcp.OnConnect:=InternalOnConnect;
 
   //if (tcp.IOHandler is TIdSSLIOHandlerSocketBase) then begin
     //  (tcp.IOHandler as TIdSSLIOHandlerSocketBase).PassThrough := False;
@@ -76,6 +78,18 @@ begin
 
     TJabberServerSession(AContext.Data).InternalOnExecute();
 
+  end;
+
+procedure TJabberServer.InternalOnConnect(AContext: TIdContext);
+var
+  buf: TIdBytes;
+begin
+  if false then //tcp.MaxConnections=tcp.Contexts.Count then
+  begin
+      buf:=TJabberServerSession.StringToUTF8Bytes('maxconnections exceeded');
+      AContext.Connection.Socket.Write(buf);
+      AContext.Connection.Disconnect;
+  end;
 end;
 
 procedure TJabberServer.InternalOnDisconnect(AContext: TIdContext);
@@ -83,11 +97,26 @@ begin
   if(Assigned(OnSessionDestroy))then
       OnSessionDestroy(TJabberServerSession(AContext.Data));
 
-  TJabberServerSession(AContext.Data).Terminate:=true;
-  //TODO: wait for exit from Recv
-  TJabberServerSession(AContext.Data).Free;
-  AContext.Data:=nil;
+  try
+    if not assigned(AContext.Data) then
+      exit;
+
+    TJabberServerSession(AContext.Data).Terminate:=true;
+    // ?useless
+    //After we set to data to nil AContext.Data
+    // TJabberServerSession methods will not been called
+
+
+    TJabberServerSession(AContext.Data).Free;
+    AContext.Data:=nil;
+  except on e:Exception do
+    GateLog('InternalOnDisconnect exception: '+e.Message);
+  end;
+
+  GateLog('InternalOnDisconnect; end of proc');
 end;
+
+
 
 procedure TJabberServer.OnTcpException(AContext: TIdContext; AException: Exception);
 begin

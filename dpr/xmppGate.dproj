@@ -77,15 +77,17 @@
         <DCC_Optimize>false</DCC_Optimize>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win32)'!=''">
-        <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
-        <VerInfo_Build>9</VerInfo_Build>
+        <DCC_Define>D7UP;$(DCC_Define)</DCC_Define>
+        <VerInfo_AutoGenVersion>true</VerInfo_AutoGenVersion>
+        <VerInfo_MinorVer>1</VerInfo_MinorVer>
+        <VerInfo_Build>12</VerInfo_Build>
         <Debugger_RunParams>-servname debug</Debugger_RunParams>
         <VerInfo_MajorVer>0</VerInfo_MajorVer>
         <VerInfo_PreRelease>true</VerInfo_PreRelease>
         <Icon_MainIcon>$(BDS)\bin\delphi_PROJECTICON.ico</Icon_MainIcon>
         <DCC_MapFile>3</DCC_MapFile>
-        <DCC_UnitSearchPath>JanXMLParser;synapse40;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
-        <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=0.0.0.9;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=0.0.0.0;Comments=</VerInfo_Keys>
+        <DCC_UnitSearchPath>JanXMLParser;synapse40;NativeXml;NativeXml\general;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=0.1.0.12;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=0.0.0.0;Comments=</VerInfo_Keys>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
@@ -110,6 +112,8 @@
         <DCCReference Include="GateXml.pas"/>
         <DCCReference Include="VkLongPollClient.pas"/>
         <DCCReference Include="vkApi.pas"/>
+        <DCCReference Include="GateVkCaptcha.pas"/>
+        <DCCReference Include="FileVersion.pas"/>
         <BuildConfiguration Include="Debug">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
@@ -186,17 +190,3 @@
     <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
 </Project>
-
-<!-- EurekaLog First Line
-[Exception Log]
-EurekaLog Version=7001
-Activate=0
-atVCL=1
-DeleteMapAfterCompile=0
-Encrypt Password=""
-idEurekaLog=1
-idEurekaLogDetailed=1
-idMSClassic=1
-idStepsToReproduce=1
-ProjectID="{0C5FE94F-8610-40A2-9E02-AD2EFCAF822A}"
-EurekaLog Last Line -->

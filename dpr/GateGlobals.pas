@@ -6,6 +6,26 @@ uses
   System.Generics.Collections, System.RegularExpressions, System.Classes, System.SyncObjs, janXMLparser2;
 
 type
+  TAddrType = (adt_unknown, adt_user, adt_conference);
+  TGateAddressee = record
+  private
+    FId: string;
+    FFullId: string;
+    FIsDomain: Boolean;
+    FJid: string;
+    Ftyp: TAddrType;
+    procedure SetId(const Value: string);
+    procedure SetJid(Value: string);
+    procedure Parse(any: string; typ: TAddrType);
+  public
+    constructor Create(any: string; typ: TAddrType = adt_unknown);
+    property FullId: string read FFullId;
+    property Id: string read FId write SetId;
+    property IsDomain: Boolean read FIsDomain;
+    property Jid: string read FJid write SetJid;
+    property typ: TAddrType read Ftyp;
+  end;
+  TObjProc = procedure of object;
   TVxCard = class;
   TVxCard = class(TComponent)
     function Duplicate(AOwner: TComponent): TVxCard;
@@ -23,6 +43,8 @@ type
     sTo: string;
     dt: TDateTime;
     sType: string;
+    Delivered: boolean;
+    //don't forget to add member processing to Duplicate proc
     constructor Create(AOwner: TComponent = nil); override;
     function Duplicate: TGateMessage;
     function Reply(sBody: string): TGateMessage;
@@ -35,7 +57,8 @@ type
       procedure SetPath(const Value: string);
   public
       constructor Create(AOwner: TComponent);
-      function LoadValue(const sName: string): string;
+      function LoadBool(sName: string; bDefault: boolean): Boolean;
+      function LoadValue(const sName: string; sDefault: string = ''): string;
       function ReadInt(const sName: string; nDefault: Integer = 0): integer;
       procedure SaveValue(const sName, sVal: string);
       procedure WriteInt(const sName: string; nVal: Integer);
@@ -61,11 +84,15 @@ type
     sGroup: string;
     Presence: TFriendPresence;
     vCard: TVxCard;
+    IsMobile: boolean;
+    AppId: string;
     constructor Create(AOwner: TComponent = nil);
     function Duplicate: TFriend;
   end;
 
 
+  TMsgList = class(TObjectList<TGateMessage>)
+  end;
 
 
 
@@ -107,9 +134,14 @@ function IsOnlineMessageTime(dt: TDateTime): Boolean;
 
 function UnicodeToAnsiEscape(textString: string): AnsiString;
 
+function HttpMethodRawByte(sUrl: string; bSsl: boolean; slPost: TStringList =
+    nil): RawByteString;
+
+function AnsiUnescapeToUtf16(sCode: string): string;
+
 const
   CR = #$d#$a;
-  SERVER_VER = '1121E4.1';
+  SERVER_VER = '2111';
 
   SUPPORTNAME='____XmppGate-Support';
 
@@ -346,9 +378,16 @@ begin
     sCmdLine:=sCmdLine+' -servname '+sServerName;
 
   csRestart.Enter; //prevent several processes creating
+  GateLog('csRestart entered');
 
+  if Assigned(gs) then
+    gs.SaveValue('restartPids', slPids.Text);
+
+  GateLog('before ShellExecute');
   Result:=32<ShellExecute(0, 'open', pChar(Application.ExeName),
     pChar(sCmdLine), nil, SW_SHOWNORMAL);
+
+  GateLog('after ShellExecute');
 
   //TODO: exit process by normal way
 
@@ -460,6 +499,55 @@ begin                    //translated from JS function convertChar2CP
 
 end;
 
+function HttpMethodRawByte(sUrl: string; bSsl: boolean; slPost: TStringList =
+    nil): RawByteString;
+var
+  ss: TStringStream;
+begin
+  Result := '';
+
+  ss:=TStringStream.Create;
+  try
+   HttpMethodSSL(sUrl, nil, false, ss);
+   Result := ss.DataString;
+  finally
+    ss.Free;
+  end;
+end;
+
+function AnsiUnescapeToUtf16(sCode: string): string;
+var
+  nCode: Cardinal;
+begin                       //JS translated function convertCP2Char ( textString ) {
+  Result := sCode;
+
+  if (copy(sCode, 1,2)='&#')and(copy(sCode, length(sCode), 1)=';') then
+    sCode:=copy(sCode, 3, length(sCode)-3)
+    else
+      exit;
+
+  try
+    nCode:=StrToInt(sCode);
+  except
+    exit;
+  end;
+
+  if nCode<=$ffff then
+  begin
+    //Result:=Char(nCode)
+  end
+    else if nCode<=$10FFFF then
+    begin
+      nCode:=nCode-$10000;
+      //String.fromCharCode(0xD800 | (n >> 10)) + String.fromCharCode(0xDC00 | (n & 0x3FF));
+      nCode:=($d800 or (nCode shr 10))+($dc00 or (nCode and $3ff));
+    end
+      else
+        Result:=Format('UTF error:%d!', [nCode]);
+
+    Result:=Char(nCode);
+end;
+
 
 constructor TGateMessage.Create(AOwner: TComponent = nil);
 begin
@@ -476,6 +564,7 @@ begin
   Result.sTo:=sTo;
   Result.sType:=sType;
   Result.dt:=dt;
+  Result.Delivered:=Delivered;
 end;
 
 function TGateMessage.Reply(sBody: string): TGateMessage;
@@ -543,7 +632,7 @@ begin
 end;
 
 function TFriend.Duplicate: TFriend;
-// TODO: memleak: May be there is implicit copying of TFriend when
+// TODO: ?memleak: May be there is implicit copying of TFriend when
 // calling TFriendList.Add ?
 begin
   Result := TFriend.Create;
@@ -552,6 +641,8 @@ begin
   Result.Presence:=Presence;
   Result.sGroup:=sGroup;
   Result.VCard:=VCard.Duplicate(Result);
+  Result.IsMobile:=IsMobile;
+  Result.AppId:=AppId;
 end;
 
 constructor TGateStorage.Create(AOwner: TComponent);
@@ -560,7 +651,17 @@ begin
   Path:=AbsPath('');
 end;
 
-function TGateStorage.LoadValue(const sName: string): string;
+function TGateStorage.LoadBool(sName: string; bDefault: boolean): Boolean;
+begin
+  Result:=bDefault;
+  if LoadValue(sName)='0' then
+    Result:=false;
+  if LoadValue(sName)='1' then
+    Result:=true;
+end;
+
+function TGateStorage.LoadValue(const sName: string; sDefault: string = ''):
+    string;
 var
   sl: TStringList;
 begin
@@ -569,7 +670,7 @@ begin
     sl.LoadFromFile(Path+sName+'.txt');
     Result:=Trim(sl.Text);
   except
-    Result:='';
+    Result:=sDefault;
   end;
   sl.Free;
 end;
@@ -589,6 +690,9 @@ procedure TGateStorage.SaveValue(const sName, sVal: string);
 var
   sl: TStringList;
 begin
+  if (Pos('\',sNAme)>0 )or (Pos('/',sNAme)>0) then
+    ForceDirectories(FPath+ExtractFilePath(sName));
+
   sl:=TStringList.Create;
   sl.Text:=sVal;
   try
@@ -628,6 +732,78 @@ begin
   Result := TVxCard.Create(AOwner);
   Result.sUrl := Self.sUrl;
   Result.sPhotoUrl := Self.sPhotoUrl;
+end;
+
+constructor TGateAddressee.Create(any: string; typ: TAddrType = adt_unknown);
+begin
+  inherited;
+  Parse(any, typ);
+end;
+
+procedure TGateAddressee.SetId(const Value: string);
+begin
+  Parse(Value, typ);
+end;
+
+procedure TGateAddressee.SetJid(Value: string);
+begin
+  Parse(Value, typ);
+end;
+
+procedure TGateAddressee.Parse(any: string; typ: TAddrType);
+var
+  gotId: string;
+begin
+  FJid:='';
+  any:=Trim(any);
+  Ftyp:=adt_user;
+  FIsDomain:=false;
+
+   if Pos('@', any)<>Pos('@vk.com', any) then
+    exit;
+  // raise ...
+  //TODO: how to be with incorrect domains?
+
+  gotId := GetRxGroup(any, '\Aid(\d+?)(?:@|\Z)', 1);
+  if gotId='' then
+  begin
+    gotId := GetRxGroup(any, '\Ac(\d+?)(?:@|\Z)', 1);
+    if gotId<>'' then
+      typ:=adt_conference;
+  end;
+
+  if gotId='' then
+  begin
+    gotId:=GetRxGroup(any, '([^\s]+?)(?:@|\Z)', 1);
+
+    try
+      if StrToInt(gotId)<0 then
+        typ:=adt_conference;
+    except
+      FIsDomain:=true;
+    end;
+  end;
+
+  if typ=adt_unknown then
+    typ:=adt_user;
+
+  //if gotId='' then
+    //TODO: (?) exception here
+    // seems like it is also simple to create reg.ex that will catch this error :)
+
+  Self.FId:=gotId;
+  Self.Ftyp:=typ;
+  if not IsDomain then
+    case typ of
+      adt_user:
+        FFullId:='id'+Id;
+      adt_conference:
+        FFullId:='c'+Id;
+    end
+    else
+      FFullId:=Id;
+
+  FJid:=FFullId+'@vk.com';
 end;
 
 
