@@ -463,7 +463,10 @@ try
   XML:=TjanXmlParser2.Create;
 
   try
-    s:=Recv;
+    s:=Trim(Recv);
+
+    if s='' then
+      exit;
 
     if(Pos('<BINVAL>', s)<>0)then
       if(Pos('Trillian', sClientProgName)=0)then
@@ -888,15 +891,16 @@ var
   Node : TjanXMLNode2;
 begin
 
-if not assigned(XML.rootNode) then
-exit;
+  if not assigned(XML.rootNode) then
+    exit;
 
   Node := XML.rootNode.FirstChild;
 
   if not Assigned(Node) then
     Node:=XML.rootNode;
 
-  repeat
+  while Assigned(Node) do
+  begin
     if LowerCase(Node.name)='stream:stream' then
       ProcessJabStream;
 
@@ -922,7 +926,7 @@ exit;
     end;
 
     Node := Node.NextSibling;
-  until not Assigned(Node) ;
+  end;
 end;
 
 procedure TJabberServerSession.ProcessResult(Node: TjanXMLNode2);

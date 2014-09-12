@@ -141,7 +141,7 @@ function AnsiUnescapeToUtf16(sCode: string): string;
 
 const
   CR = #$d#$a;
-  SERVER_VER = '2111';
+  SERVER_VER = '2111B';
 
   SUPPORTNAME='____XmppGate-Support';
 

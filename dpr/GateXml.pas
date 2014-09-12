@@ -109,6 +109,7 @@ var
   sib: TXmlNode;
 begin
   Result:=nil;
+  sib:=nil;
   try
     sib:=FNode.NextSibling(FNode);
   except
@@ -131,22 +132,24 @@ end;
 
 constructor TGateXmlParser.Create;
 begin
-  CoInitialize(nil);
+  //CoInitialize(nil);
   doc:=TNativeXml.Create(Self);
   inherited Create(nil, nil);
 end;
 
 destructor TGateXmlParser.Destroy;
 begin
-  //doc.Free;
-  doc:=nil;
+  doc.Free;
+  //doc:=nil;
   inherited;
-  CoUnInitialize();
+  //CoUnInitialize();
 end;
 
 function TGateXmlParser.GetrootNode: TGateXmlNode;
 begin
-  Result:=TGateXmlNode.Create(Self, doc.Root);
+  if Assigned(doc.Root) then
+    Result:=TGateXmlNode.Create(Self, doc.Root)
+    else Result:=nil;
 end;
 
 function TGateXmlParser.Getxml: string;
