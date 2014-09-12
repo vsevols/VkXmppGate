@@ -68,17 +68,16 @@ begin
     exit;
   end;
 
+  sTimes:=Format('%d;',[GetCurrentThreadID])+FormatDateTime('mmdd hh:nn:ss.zzz', Now);
 
   if LastMsgCount>0 then
   begin
-    sTimes:=FormatDateTime('mmdd hh:nn:ss.zzz', Now)+Format(';%s; (%d times)'+#13#10, [sLastMsg, LastMsgCount]);
+    sTimes:=sTimes+Format(';%s; (%d times)'+#13#10, [sLastMsg, LastMsgCount]);
     LastMsgCount:=0;
-  end
-    else
-      sTimes:='';
+  end;
 
   sLastMsg:=msg;
-  msg:=sTimes+FormatDateTime('mmdd hh:nn:ss.zzz', Now)+';'+msg;
+  msg:=sTimes+';'+msg;
   cs.Enter;
   try
 

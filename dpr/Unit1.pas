@@ -98,13 +98,13 @@ end;
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  isDbg:=true;
-//  isDbg:=false;
+  isDbg:=false;
+//  isDbg:=true;
   //bFakes:=true;
 
   //bLongPollLog:=true;
   //bVkApiLog:=true;
-  bXmppLog:=true;
+  //bXmppLog:=true;
 
  // if isDbg then
    // TempEmojiPack;

@@ -805,7 +805,7 @@ begin
 
     finally
       if not bKnown then
-        Result:=Result+CR+Format('++мехгбеярмши рхо бкнфемхъ %sim?sel=%s', [GetVkUrl, sChatUid]);
+        Result:=Result+CR+Format('++мехгбеярмши рхо бкнфемхъ %s %sim?sel=%s', [sType, GetVkUrl, sChatUid]);
 
       inc(i);
     end;
