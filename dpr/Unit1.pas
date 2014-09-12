@@ -98,16 +98,16 @@ end;
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  isDbg:=false;
-//  isDbg:=true;
+  isDbg:=true;
+//  isDbg:=false;
   //bFakes:=true;
 
   //bLongPollLog:=true;
   //bVkApiLog:=true;
-  //bXmppLog:=true;
+  bXmppLog:=true;
 
-  if isDbg then
-    TempEmojiPack;
+ // if isDbg then
+   // TempEmojiPack;
 
   if not isDbg then
   begin
@@ -118,7 +118,7 @@ begin
   end;
 
 
-  xmlForm:=Self;
+  //xmlForm:=Self;
   Application.OnException:=AppException;
   Application.OnIdle:=AppIdle;
 
@@ -144,7 +144,7 @@ begin
    //Socket Error # 10060 Connection timed out
    //if Pos('10060', e.Message)<>0 then
 
-   GateLog(Format('Sender: %d ; %s', [ToHex(Cardinal(Sender)), e.Message]));
+   GateLog(Format('Sender: %s ; %s', [ToHex(Cardinal(Sender)), e.Message]));
 end;
 
 

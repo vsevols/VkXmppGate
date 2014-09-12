@@ -441,6 +441,7 @@ Result:=false;
 procedure TJabberServerSession.InternalOnExecute;
 var
   s: string;
+  s2: string;
   XML: TjanXMLParser2;
 begin
 
@@ -474,9 +475,17 @@ try
       // must be merging (not realized)
 
     if Pos('<?xml', LowerCase(s))<>1  then
-      s:=Format('<STREAM>%s</STREAM>', [s]);
-
-    xml.xml:=UnicodeToAnsiEscape(s);
+      s2:=Format('<STREAM>%s</STREAM>', [s]);
+    try
+      xml.xml:=UnicodeToAnsiEscape(s2);
+    except
+      try
+        xml.xml:=UnicodeToAnsiEscape(s+'</stream:stream>');
+      except
+        s:=ReplaceStr(s2, '</stream:stream>', '');
+        xml.xml:=UnicodeToAnsiEscape(s);
+      end;
+    end;
   except
   end;
 
@@ -878,6 +887,10 @@ procedure TJabberServerSession.ProcessOnline(XML: TjanXMLParser2);
 var
   Node : TjanXMLNode2;
 begin
+
+if not assigned(XML.rootNode) then
+exit;
+
   Node := XML.rootNode.FirstChild;
 
   if not Assigned(Node) then
@@ -1065,6 +1078,7 @@ begin
   msg:=TGateMessage.Create;
   msg.sFrom:=sFrom;
   msg.sBody:=sBody;
+  msg.sTo:=sJid;
 
   if not bSendLast then
     SendMessage(msg)

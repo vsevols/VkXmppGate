@@ -30,7 +30,7 @@ type
     dtHealth: TDateTime;
     FAllIdleCount: Integer;
     Friends: TFriendList;
-    gs: TGateStorage;
+    gsApp: TGateStorage;
     //MarkMsgsRead: Boolean;
     MarkMsgsRead2: string;   // replace of MarkMsgsRead
     meFriend: TFriend;
@@ -54,7 +54,7 @@ type
     function GetUidOrIp: string;
     procedure IdleProcessCaptcha;
     procedure MessageDelivered(msg: TGateMessage);
-    procedure OnReplyMarkRead(sJid: string);
+    procedure OnReplyMarkRead(sJid: string; bRead, bForgetIds: Boolean);
     function OnXmppGetFriend(sAddr: string): TFriend;
     procedure OnXmppStillAlive;
     procedure ProcessGetCode(msg: TGateMessage);
@@ -90,6 +90,8 @@ type
     function ProcessSysAddrMsg(msg: TGateMessage): Boolean;
     procedure UpdateContacts;
     procedure VkAddNotAnsweredMsgs(msgs: TMsgList);
+    function VKSendMessage(msg: TGateMessage; bAutoMessage: boolean = false):
+        Boolean;
     procedure XmppDoAskForVkAuthCode(const sAddRights: string);
     procedure XmppAskForVkAuthCode(bIncorrect: Boolean = false);
     property OnLog: TLogProc read FOnLog write SetOnLog;
@@ -133,7 +135,7 @@ begin
   VkReceivedMsgs :=TMsgList.Create(true);
   slAutoAnswered := TStringList.Create();
   vkc := TGateVkCaptcha.Create();
-  gs := TGateStorage.Create(Self);
+  gsApp := TGateStorage.Create(Self);
   slNotAnsweredMsgs := TStringList.Create();
 end;
 
@@ -151,6 +153,9 @@ begin
     step:='slAutoAnswered';
     FreeAndNil(slAutoAnswered);
     step:='Persons';
+    FreeAndNil(gsApp);
+    step:='gsApp';
+
     try
       FreeAndNil(Persons);  //TODO: exception here!
       step:='VkReceivedMsgs';
@@ -319,7 +324,7 @@ begin
 
   if LowerCase(Trim(msg.sBody))='whatsnew' then
   begin
-    BotSendMessage(gs.LoadValue('whatsnew', ''));
+    BotSendMessage(gsApp.LoadValue('whatsnew', ''));
     exit;
   end;
 
@@ -605,7 +610,7 @@ procedure TVKtoXmppSession.OnIdle;
 begin
   inc(FAllIdleCount);
 
-  GateLog(Format('%d gs.path=%s', [FAllIdleCount, gs.Path]));
+//  GateLog(Format('%d gs.path=%s', [FAllIdleCount, gs.Path]));
 
   CheckAbandoned;
   OnIdleHealth;
@@ -732,11 +737,12 @@ begin
       )
     );
   try
-    vk.SendMessage(msgRepl);
+    VKSendMessage(msgRepl, true);
     Log(Format('autoanswer to %s : %s', [msgRepl.sTo, msgRepl.sBody]));
   finally
     msgRepl.Free;
   end;
+
 end;
 
 function TVKtoXmppSession.AutoAnsweredAdd(sFrom: string): Boolean;
@@ -754,10 +760,9 @@ var
   sl: TStringList;
   sStamp: string;
 begin
-  gs:=TGateStorage.Create(nil);
   sl:=TStringList.Create;
   try
-    sl.Text:=gs.LoadValue('forcedNews');
+    sl.Text:=gsApp.LoadValue('forcedNews');
     if sl.Count>0 then
       sStamp:=Trim(sl.Strings[0])
       else
@@ -774,7 +779,6 @@ begin
     profile.SaveValue('LastForcedNewsId', sStamp);
   finally
     FreeAndNil(sl);
-    gs.Free;
   end;
 end;
 
@@ -965,12 +969,12 @@ begin
     if Assigned(Result) then
       Persons.Add(Result);
   end;
-
+      {
   if sAddr<>'id'+vk.Uid+'@vk.com' then
   begin
     Result.sFullName:=Result.sFullName+' НЕ_В_ДРУЗЬЯХ';
     Result.sGroup:='VK.COM-others'
-  end;
+  end; }
 end;
 
 procedure TVKtoXmppSession.OnXmppMessage(msg: TGateMessage);
@@ -998,11 +1002,9 @@ begin
       if ProcessSysAddrMsg(msgSend) then
         exit;
 
-      bSent:=Vk.SendMessage(msgSend);
+      bSent:=VkSendMessage(msgSend);
 
-      if bSent then
-        if MarkMsgsRead2='onreply' then
-          OnReplyMarkRead(msgSend.sTo);
+
 
 
     except on e:EXception do
@@ -1090,17 +1092,17 @@ begin
       if Assigned(fr) then
       begin
         sAppName:=
-        IfThen(fr.AppId='3842439', 'VkXmppGate', '');
+        IfThen(fr.AppId='3842439', 'VkXmppGate', fr.AppId);
         sAppName:=
         IfThen(fr.AppId='3881289', 'VkXmppGate(альт.сборка)', sAppName);
-        if sAppName='' then
-          sAppName:=fr.AppId;
+        sAppName:=
+        IfThen(fr.AppId='4166906', 'VkXmppGate сервер SkyNet', sAppName);
 
         JabSession.SendMessage(msg.sTo,
           'VkXmppGate:'+CR+
           ' '+fr.sFullName+CR+
           Format(' Профиль: http://%svk.com/%s', [sM, TGateAddressee.Create(msg.sTo).FullId])+CR+
-          Format(' Диалог: http://%svk.com/im?sel=%s', [sM, TGateAddressee.Create(msg.sTo).FullId])
+          Format(' Диалог: http://%svk.com/im?sel=%s', [sM, TGateAddressee.Create(msg.sTo).Id])
           +IfThen(fr.IsMobile, CR+' Собеседник использует мобильную версию.', '')
           +IfThen(sAppName<>'', CR+' Приложение собеседника: '+sAppName, '')
           );
@@ -1150,16 +1152,21 @@ begin
       Vk.MsgMarkAsRead(msg.sId);
 end;
 
-procedure TVKtoXmppSession.OnReplyMarkRead(sJid: string);
+procedure TVKtoXmppSession.OnReplyMarkRead(sJid: string; bRead, bForgetIds:
+    Boolean);
 begin
   if slNotAnsweredMsgs.Values[sJid]<>'' then
   begin
     vk.MsgMarkAsRead(
       TGateAddressee.Create(sJid).Id,
-      slNotAnsweredMsgs.Values[sJid]
+      slNotAnsweredMsgs.Values[sJid],
+      bRead
       );
-    slNotAnsweredMsgs.Values[sJid]:='';
-    profile.SaveValue('notAnsweredMsgs', slNotAnsweredMsgs.Text);
+    if bForgetIds then
+    begin
+      slNotAnsweredMsgs.Values[sJid]:='';
+      profile.SaveValue('notAnsweredMsgs', slNotAnsweredMsgs.Text);
+    end;
   end;
 end;
 
@@ -1312,6 +1319,12 @@ begin
       //if slNotAnsweredMsgs.Values[msgs.Items[i].sFrom]='' then
         //slNotAnsweredMsgs.Add(msgs.Items[i].sFrom);   //TODO: !!or not needed??
 
+      if TGateAddressee.Create(msgs.Items[i].sTo).typ=adt_conference then
+        continue;
+        //I didn't found the way to call messages.markAsRead for
+        // conferences without message_ids param
+
+
       slNotAnsweredMsgs.Values[msgs.Items[i].sFrom]:=
         IntToStr(
           Min(
@@ -1323,6 +1336,23 @@ begin
 
   if sPrev<>Trim(slNotAnsweredMsgs.Text) then
     profile.SaveValue('notAnsweredMsgs', slNotAnsweredMsgs.Text);
+end;
+
+function TVKtoXmppSession.VKSendMessage(msg: TGateMessage; bAutoMessage:
+    boolean = false): Boolean;
+begin
+  Result:=Vk.SendMessage(msg);
+
+  if not Result then
+    exit;
+
+  if (MarkMsgsRead2<>'always') or
+    ((MarkMsgsRead2='onreply') and bAutoMessage) then
+      OnReplyMarkRead(msg.sTo, false, false);
+
+  if MarkMsgsRead2='none' then
+    OnReplyMarkRead(msg.sTo, false, true);
+
 end;
 
 procedure TVKtoXmppSession.XmppDoAskForVkAuthCode(const sAddRights: string);

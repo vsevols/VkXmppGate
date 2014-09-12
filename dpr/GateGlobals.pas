@@ -141,7 +141,7 @@ function AnsiUnescapeToUtf16(sCode: string): string;
 
 const
   CR = #$d#$a;
-  SERVER_VER = '1219B1';
+  SERVER_VER = '2111';
 
   SUPPORTNAME='____XmppGate-Support';
 
@@ -704,7 +704,6 @@ end;
 
 procedure TGateStorage.SetPath(const Value: string);
 begin
-  GateLog('SetPath: '+Value);
   FPath := IncludeTrailingPathDelimiter(Value);
   ForceDirectories(FPath);
 end;
@@ -760,7 +759,8 @@ begin
   Ftyp:=adt_user;
   FIsDomain:=false;
 
-  // if Pos('@')<>Pos('@vk.com') then
+   if Pos('@', any)<>Pos('@vk.com', any) then
+    exit;
   // raise ...
   //TODO: how to be with incorrect domains?
 

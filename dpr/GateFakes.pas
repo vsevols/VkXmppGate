@@ -15,7 +15,7 @@ var
   bVk14Error: boolean;
 
 procedure FakeVkErrorCheckSub(xml: TjanXMLNode2);
-begin
+begin                    exit;{
   if not bFakes then
     exit;
 
@@ -27,7 +27,7 @@ begin
    xml.addChildByName('error_code').text:='14';
    xml.addChildByName('captcha_sid').text:='5432';
    xml.addChildByName('captcha_img').text:='http://12345';
-   xml.addChildByName('error_msg').text:='Fake EVkApi 14';
+   xml.addChildByName('error_msg').text:='Fake EVkApi 14';      }
 end;
 
 initialization

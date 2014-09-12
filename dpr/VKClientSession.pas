@@ -103,7 +103,8 @@ type
     procedure KeepStatus;
     function Max(a, b: Integer): Integer;
     procedure MsgMarkAsRead(const sId: string); overload;
-    procedure MsgMarkAsRead(sUid: string; const sStartId: string); overload;
+    procedure MsgMarkAsRead(sUid: string; const sStartId: string; bRead: Boolean);
+        overload;
     function NodeGetChildText(Node: TjanXMLNode2; const sChild: string): string;
     procedure OnLongPollEvent;
     procedure TypingAsync(sUid: string);
@@ -1246,7 +1247,7 @@ begin
     end;
 
   if (Node.getChildByName('title')<>nil)
-    and (Node.getChildByName('title').text<>'...') then
+    and (Trim(Node.getChildByName('title').text)<>'...') then
     begin
       msg.sBody := msg.sBody+Node.getChildByName('title').text;
       bCR:=true;
@@ -1301,18 +1302,33 @@ function TVKClientSession.MessageBodyTranslate(sBody: string; bDirection,
 begin
   Result:='';
   Result := XmlEscape(sBody, not bDirection, bDirection);
+  Result:=UnicodeToAnsiEscape(Result); //140309 seems like MSXML unescapes unicode
 
   if bEmoji then
     Result:=EmojiTranslate(Result, bDirection);
 
 end;
 
-procedure TVKClientSession.MsgMarkAsRead(sUid: string; const sStartId: string);
+procedure TVKClientSession.MsgMarkAsRead(sUid: string; const sStartId: string;
+    bRead: Boolean);
+var
+  sMethod: string;
 begin
-  VkApiCallFmt(
-    'messages.markAsRead', 'user_id=%s&start_message_id=%s',
-    [sUid,sStartId]
-      ).Free;
+  sMethod:=IfThen(bRead, 'messages.markAsRead', 'messages.markAsNew');
+
+  if bRead then
+    VkApiCallFmt(
+      sMethod, 'user_id=%s&start_message_id=%s',
+      [sUid,sStartId]
+        ).Free
+        {
+        else
+        VkApiCallFmt(
+          sMethod,
+          'message_ids=%s',
+          [sStartId]
+            ).Free;       } //140911 messages.markAsNew is no longer supported
+
 end;
 
 function TVKClientSession.NodeGetChildText(Node: TjanXMLNode2; const sChild:
