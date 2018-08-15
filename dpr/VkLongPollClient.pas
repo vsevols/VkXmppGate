@@ -3,7 +3,7 @@ unit VkLongPollClient;
 interface
 
 uses
-  System.Classes, GateGlobals, IdHttp, IdGlobal, System.SyncObjs;
+  System.Classes, GateGlobals, IdHttp;
 
 type
   TLongPollStream = class;
@@ -13,10 +13,11 @@ type
     FOnLog: TLogProc;
     Key: string;
     OnNewServerNeeded: TVoidObjProc;
-    Owner: TComponent;
+    childsOwner: TComponent;
+    FTimeout: Integer;
     pollStream: TLongPollStream;
     Server: string;
-    tcp: TIdHttp;
+    IdHTTP: TIdHttp;
     Ts: string;
     procedure ClearServer;
     procedure Connect;
@@ -26,10 +27,8 @@ type
     procedure SetOnEvent(const Value: TVoidObjProc);
     procedure SetOnLog(const Value: TLogProc);
   public
-    cs: TCriticalSection;
     //OnLog: TLogProc;
     VkApiCallFmt: TVkApiCallFmt;
-    OnTyping: procedure(sUid:string) of object;
     constructor Create(bSuspended: Boolean);
     destructor Destroy; override;
     procedure Execute; override;
@@ -48,22 +47,28 @@ type
 implementation
 
 uses
-  janXMLparser2, vkApi, System.SysUtils;
+  janXMLparser2, vkApi, System.SysUtils, IdIOHandlerStack, IdSSLOpenSSL;
 
 constructor TVkLongPollClient.Create(bSuspended: Boolean);
+var
+  ioh: TIdSSLIOHandlerSocketOpenSSL;
 begin
   inherited;
-  owner:=TComponent.Create(nil);
-  cs := TCriticalSection.Create();
-  tcp:=TIdHttp.Create(owner);
+  childsOwner:=TComponent.Create(nil);
+  IdHTTP:=TIdHttp.Create(childsOwner);
+
+  FTimeout:=25000;
+  ioh:=TIdSSLIOHandlerSocketOpenSSL.Create(IdHTTP);
+  ioh.ConnectTimeout := FTimeout+1000;
+  IdHTTP.IOHandler:= ioh;
+
   pollStream:=TLongPollStream.Create;
   pollStream.OnWrite:=Parse;
 end;
 
 destructor TVkLongPollClient.Destroy;
 begin
-  FreeAndNil(cs);
-  FreeAndNil(owner);
+  FreeAndNil(childsOwner);
   FreeAndNil(pollStream);
   inherited Destroy;
 end;
@@ -99,7 +104,7 @@ end;
 
 procedure TVkLongPollClient.KeepConnected;
 begin
-  //if not tcp.Connected then
+  //if not IdHTTP.Connected then
     Connect;
 end;
 
@@ -110,13 +115,13 @@ begin
   if Server='' then
     RetrieveServerParams;    //TODO: Check syntax { failed: 2 }
 
-  sUrl:=Format('http://%s?act=a_check&key=%s&ts=%s&wait=25&mode=2',
-    [Server, key, ts]);
+  sUrl:=Format('https://%s?act=a_check&key=%s&ts=%s&wait=%d&mode=2',
+    [Server, key, ts, FTimeout div 1000]);
 
   if bLongPollLog then
     OnLog('TVkLongPollClient GET: '+sUrl);
 
-  tcp.Get(sUrl, pollStream);
+  IdHTTP.Get(sUrl, pollStream);
 end;
 
 procedure TVkLongPollClient.Execute;
@@ -138,7 +143,8 @@ begin
     begin
       if Assigned(OnLog) then
         OnLog(e.Message);
-      Sleep(30000);
+      ClearServer;
+      Sleep(5000);
     end;
     end;
   end;
@@ -154,8 +160,6 @@ begin
 end;
 
 function TVkLongPollClient.Parse(sJson: string): boolean;
-var
-  sTypingId: string;
 begin
   Result:=true;
 
@@ -165,24 +169,8 @@ begin
   if JsonErrorCheck(sJson) then
   begin
     if Pos('[4,', sJson)>0 then
-      try
-        cs.Enter;
-        OnEvent;
-      finally
-        cs.Leave;
-      end;
-
-    sTypingId:=GetRxGroup(sJson, '61,(-{0,1}\d*?),', 1);
-    if sTypingId<>'' then
-      if Assigned(OnTyping) then
-        try
-          cs.Enter;
-          OnTyping(sTypingId);
-        finally
-          cs.Leave;
-        end;
-
-    Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
+      OnEvent;
+      Ts:=GetRxGroup(sJson, '"ts":(\d*?),', 1);
   end
     else Ts:='';
 

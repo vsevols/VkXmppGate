@@ -1,7 +1,27 @@
-*.dcu
-*.identcache
-*.~*
-*.stat
-*.local
-*.dsk
+# VkXmppGate security
+agApiKey.txt
+.gitignore
+
+# Delphi compiler-generated binaries (safe to delete)
 *.exe
+*.dll
+*.bpl
+*.bpi
+*.dcp
+*.so
+*.apk
+*.drc
+*.map
+*.dres
+*.rsm
+*.tds
+*.dcu
+*.lib
+*.a
+*.o
+*.ocx
+
+# Delphi history and backups
+__history/
+__recovery/
+*.~*

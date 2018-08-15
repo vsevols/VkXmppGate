@@ -1,7 +1,2 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<BorlandProject>
-	<Transactions>
-    <Transaction>1899.12.30 00:00:00.000.054,X:\Coding\XMPPgate\dpr1219\dpr\Unit2.pas=X:\Coding\XMPPgate\dpr1219\dpr\FileVersion.pas</Transaction>
-    <Transaction>1899.12.30 00:00:00.000.122,=X:\Coding\XMPPgate\dpr1219\dpr\Unit2.pas</Transaction>
-  </Transactions>
-</BorlandProject>
+<BorlandProject/>

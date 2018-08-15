@@ -26,7 +26,7 @@ object Form1: TForm1
     TabOrder = 0
   end
   object btnRestartServer: TButton
-    Left = 88
+    Left = 80
     Top = 96
     Width = 209
     Height = 25

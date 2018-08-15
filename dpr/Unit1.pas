@@ -58,7 +58,7 @@ implementation
 uses
   IdTCPClient, System.DateUtils, IdSSL, System.StrUtils, JabberServerSession,
   GateGlobals, uvsDebug, CoolTrayIcon, janXMLparser2, GateXml,
-  IdHTTP;
+  IdHTTP, uTesting;
 
 {$R *.dfm}
 
@@ -84,8 +84,7 @@ procedure TForm1.DecClients;
 begin
   cs.Enter;
 
-  //Dec(ClientCount);
-  ClientCount:=core.Jab.tcp.Contexts.Count;
+  ClientCount:=core.Jab.tcp.Contexts.Count-1; //calling context is desctructing now
   UpdateGui(true);
 
   cs.Leave;
@@ -98,15 +97,15 @@ end;
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  isDbg:=true;
-//  isDbg:=false;
+  isDbg:=false;
+  //isDbg:=true;
   //bFakes:=true;
 
   //bLongPollLog:=true;
   //bVkApiLog:=true;
-  bXmppLog:=true;
+  //bXmppLog:=true;
 
- // if isDbg then
+  //if isDbg then
    // TempEmojiPack;
 
   if not isDbg then
@@ -115,10 +114,11 @@ begin
     bXmppLog:=false;
     bFakes:=false;
     bVkApiLog:=false;
+    bVsevMsgHeadersLog:=True;
   end;
 
 
-  //xmlForm:=Self;
+  xmlForm:=Self;
   Application.OnException:=AppException;
   Application.OnIdle:=AppIdle;
 
@@ -137,6 +137,9 @@ begin
     finally
       UpdateGui(false);
     end;
+
+    if IsDbg then
+      RunTests;
 end;
 
 procedure TForm1.AppException(Sender: TObject; E: Exception);
@@ -144,7 +147,7 @@ begin
    //Socket Error # 10060 Connection timed out
    //if Pos('10060', e.Message)<>0 then
 
-   GateLog(Format('Sender: %s ; %s', [ToHex(Cardinal(Sender)), e.Message]));
+   GateLog(e.Message);
 end;
 
 
@@ -182,8 +185,6 @@ begin
   cs.Enter;
 
   ClientCount:=core.Jab.tcp.Contexts.Count;
-
-  //Inc(ClientCount);
   UpdateGui(true);
 
   cs.Leave;
@@ -302,10 +303,11 @@ procedure TForm1.UpdateGui(bInform: boolean);
 var
   sDbg: string;
 begin
+//  ClientCount:=core.Jab.tcp.Contexts.Count;
 
   sDbg:=IfThen(isDbg, 'DBG', '');
-  Caption:=Format('v.%s %s Подключено клиентов: %d Контекстов: %d Порт: %d',
-    [SERVER_VER, sDbg, ClientCount, core.Jab.tcp.Contexts.Count, core.Jab.DefaultPort]);
+  Caption:=Format('v.%s %s Подключено клиентов: %d Порт: %d',
+    [SERVER_VER, sDbg, ClientCount, core.Jab.DefaultPort]);
   Application.Title:=Format('%d - XMPPGate', [ClientCount]);
   TrayIcon.Text:=IntToStr(ClientCount);
 

@@ -13,6 +13,7 @@ uses
 type
   //TVkSessionStatus = (vks_notoken, vks_ok, vks_captcha);
 
+
   TVxEmoji = class(TObject)
     function TranslateCode(sCode: string; var sTranslated: string): Boolean;
     function TranslateCodeHex(sCode: string; var sTranslated: string): Boolean;
@@ -42,20 +43,20 @@ type
     FIdLastMessage: Integer;
     FLongPollHasEvents: boolean;
     FOnCaptchaAccepted: TObjProc;
+    FPersonsCache: TFriendList;
     FPrepareLastMessage: Integer;
     LongPoll: TVkLongPollClient;
     Msgs: TObjectList;
     sApiKey: string;
     sCaptchaResponse: string;
-    function CheckNewMessages: boolean;
-    procedure LongPollReCreate;
+    function CheckNewMessages(AOutBox: Boolean): boolean;
     function DoVkApiCall(sUrl: string; slPost: TStringList = nil): TjanXMLParser2;
     function ExtractAuthCode(sCode: string): string;
     function GetAttachmentId(at: TjanXMLNode2): string;
-    function SlNameFromIndex(sl: TStringList; Index: Integer): string;
-    function ParseMessageAttachments(Node: TjanXMLNode2): string;
-    function ProcessAttachedFwdMessages(fwdmessages: TjanXMLNode2): string;
-    function QueryUserFullName(sUid: string): string;
+    procedure InitLongPoll;
+    function ParseMessageAttachments(Node: TjanXMLNode2; Msg: TGateMessage): string;
+    function ProcessAttachedFwdMessages(fwdmessages: TjanXMLNode2; AMsg:
+        TGateMessage): string;
     procedure SetApiToken(const Value: string);
     procedure SetLongPollHasEvents(const Value: boolean);
     procedure SetOnLog(const Value: TLogProc);
@@ -63,7 +64,7 @@ type
     procedure toMessage3V(Node: TjanXMLNode2);
     function MessageBodyTranslate(sBody: string; bDirection, bEmoji: boolean):
         string;
-    procedure ProcessTyping;
+    function QueryUserFullName(sUid: string): string;
     function VkApiCall(sUrl: string; slPost: TStringList = nil): TjanXMLParser2;
     property LongPollHasEvents: boolean read FLongPollHasEvents write
         SetLongPollHasEvents;
@@ -77,37 +78,40 @@ type
     FOnLog: TLogProc;
     IgnoreChats: Boolean;
     Invisible: Boolean;
+    MustProcessOutbox: Boolean;
     OnMessage: procedure(msg: TGateMessage) of object;
     OnCaptchaNeeded: procedure(sCaptchaSid: string; sCaptchaUrl:string; sUrl5:string) of object;
     // called with false when auth error occurs
     OnTokenNotify: procedure(bAuthorized: boolean) of object;
-    Permissions: string;
     sApiClientId: string;
     sCaptchaSid: string;
     sCaptchaUrl: string;
     sFullName: string;
-    slNowTyping: TStringList;
     sSilCaptchaSid: string;
     sSilCaptchaUrl: string;
     Uid: string;
     constructor Create(AOwner: TComponent);
     destructor Destroy; override;
+    procedure ForwardMessage(msg: TGateMessage; AToAddr: string);
+    procedure DoOnLog(const str: string);
+    procedure DoOnTokenNotify(bAuthorized: Boolean);
     function QueryAccessToken(sCode: string): boolean;
     function GetCaptchaUrl5: string;
     function GetConfUserDescr(sUid: string): string;
     function GetFriends: TFriendList;
+    function GetMsgWebLink(sChatUid, sMsgId: string): string;
+    function GetMsgWebLinkByJid(AJid, AMsgId: string): string;
     function GetPerson(sAddr: string): TFriend;
     function GetPersons(sUids: string): TFriendList;
     function GetVkUrl: string;
     function IsReady: boolean;
+    function JIdToVkUid(sTo: string): string;
+    function JIdToChatId(sTo: string): string;
     procedure KeepStatus;
     function Max(a, b: Integer): Integer;
-    procedure MsgMarkAsRead(const sId: string); overload;
-    procedure MsgMarkAsRead(sUid: string; const sStartId: string; bRead: Boolean);
-        overload;
+    procedure MsgMarkAsRead(const sId: string);
     function NodeGetChildText(Node: TjanXMLNode2; const sChild: string): string;
     procedure OnLongPollEvent;
-    procedure TypingAsync(sUid: string);
     function ParseMessages(xml: TjanXMLParser2): boolean;
     procedure ProcessCaptchaNeeded(xml: TjanXMLNode2);
     function ProcessNewMessages: Boolean;
@@ -116,14 +120,14 @@ type
     function SendMessage_(msg: TGateMessage): Boolean;
     function SendMessage(msg: TGateMessage): Boolean;
     function VkDateToDateTime(sDate: string): TDateTime;
-    procedure PrepareLastMessageId(ALast: Integer; bForce: boolean = false);
+    procedure SetLastMessageId(ALast: Integer; bForce: boolean = false);
     procedure SetOffline;
     function SleepRandom(maxMilliseconds: Integer):integer;
+    function TabifyFwdBody(sBody: string): string;
     procedure toFriend(Node: TjanXMLNode2; fl: TFriendList; sGroup: string = '');
     function VkApiCallFmt(const sMethod, sParams: string; args: array of const;
         slPost: TStringList = nil): TjanXMLParser2;
-    procedure VkErrorCheck(xml: TjanXMLNode2; sMethod: string);
-    procedure WallPost(msg: TGateMessage);
+    procedure VkErrorCheck(xml: TjanXMLNode2);
     property ApiToken: string read FApiToken write SetApiToken;
     property IdLastMessage: Integer read FIdLastMessage;
     property OnCaptchaAccepted: TObjProc read FOnCaptchaAccepted write
@@ -131,12 +135,17 @@ type
     property OnLog: TLogProc read FOnLog write SetOnLog;
   end;
 
+procedure SleepEx(milliseconds: Cardinal;bAlertable: boolean);stdcall;
+procedure SleepEx; external 'kernel32.dll' name 'SleepEx'; stdcall;
+
 implementation
 
 uses
   IdURI, IdSSLOpenSSL,
   IdHTTP, httpsend, Vcl.Dialogs, ssl_openssl, System.DateUtils, GateFakes,
   System.RegularExpressions, vkApi, uvsDebug, System.StrUtils;
+
+
 
 constructor TVKClientSession.Create(AOwner: TComponent);
 var
@@ -165,37 +174,47 @@ begin
     gs.Free;
   end;
 
+  (*TODO: extracted code
+  LongPoll := TVkLongPollClient.Create(true);
+  LongPoll.VkApiCallFmt:=VkApiCallFmt;
+  LongPoll.OnEvent:=OnLongPollEvent;
+  LongPoll.OnLog_:=OnLog_;
+  *)
+  InitLongPoll;
+
 
   Emoji := TVxEmoji.Create();
   Emoji.SetTablePath(AbsPath(Format('emos\%s.txt', ['VkEmojiGroup'])));
-  slNowTyping := TStringList.Create();
+  FPersonsCache := TFriendList.Create();
+  FPersonsCache.OwnsObjects:=True;
 end;
 
 destructor TVKClientSession.Destroy;
 begin
-  FreeAndNil(slNowTyping);
 
   try
     if not Invisible then
-      VkApiCallFmt('account.setOffline', '', []).Free;
+      VkApiCallFmt('account.setOffline', '', []);
   except
   end;
 
-  FreeAndNil(Emoji);
 
   if Assigned(LongPoll) then
   begin
     if not LongPoll.Suspended then
     begin
-      LongPoll.FreeOnTerminate:=false;
       LongPoll.Terminate;
-      LongPoll.WaitFor;
+      LongPoll.WaitFor; //(?) hangs
       //while not LongPoll.Suspended do
         //SleepEx(1000, false);
     end;
 
-    FreeAndNil(LongPoll);
+    LongPoll.Free;
   end;
+
+  FreeAndNil(Emoji);
+  FreeAndNil(FPersonsCache);
+
   inherited;
 end;
 
@@ -238,34 +257,43 @@ begin
     Result:=LowerCase(sCode);
 end;
 
-function TVKClientSession.CheckNewMessages: boolean;
+function TVKClientSession.CheckNewMessages(AOutBox: Boolean): boolean;
 var
+  OutFlag: string;
   xml: TjanXMLParser2;
 begin
   Result := false;
 
-  try
+  OutFlag:=IfThen(AOutBox, '1', '0');
+  //0926 TODO: For Outbox processing there must be IdLastMessageOut variable or message array must be pre-sorted before
+  // firing OnMessage handler
+
+
                                        //TODO: time_offset - param
                                        //TODO: ! There may be be situation in which old not-delivered messages are ignored
     xml:=VkApiCall(
       Format(
-      'https://api.vk.com/method/messages.get.xml?v=3.0&access_token=%s', [ApiToken]));
+    'https://api.vk.com/method/messages.get.xml?v=3.0&access_token=%s&out=%s', [ApiToken, OutFlag]));
 
     //CheckVkError(sXml);
 
+  try
     Result:=ParseMessages(xml);
   finally
     FreeAndNil(xml);
   end;
 end;
 
-procedure TVKClientSession.LongPollReCreate;
+procedure TVKClientSession.DoOnLog(const str: string);
 begin
-  LongPoll := TVkLongPollClient.Create(true);
-  LongPoll.VkApiCallFmt:=VkApiCallFmt;
-  LongPoll.OnEvent:=OnLongPollEvent;
-  LongPoll.OnTyping:=TypingAsync;
-  LongPoll.OnLog:=OnLog;
+  if Assigned(OnLog) then
+    OnLog(str);
+end;
+
+procedure TVKClientSession.DoOnTokenNotify(bAuthorized: Boolean);
+begin
+  if Assigned(OnTokenNotify) then
+    OnTokenNotify(bAuthorized);
 end;
 
 function TVKClientSession.DoVkApiCall(sUrl: string; slPost: TStringList = nil):
@@ -278,12 +306,15 @@ begin
 
   if bVkApiLog then
   begin
-    OnLog('VKAPI Call: '+sUrl);
+    DoOnLog('VKAPI Call: '+sUrl);
     if Assigned(slPost) then
-      OnLog(slPost.Text);
+      DoOnLog(slPost.Text);
   end;
 
-  sXml:=HttpMethodSSL(sUrl, slPost);
+  //if isDbg and dbgInGetPerson then
+  //  raise Exception.Create('Fake Socket Exception');
+
+  sXml:=HttpMethodSSL(sUrl, slPost);  // TODO: test with fake exception here
 
   xml:=TjanXMLParser2.Create;
   try
@@ -294,7 +325,7 @@ begin
   end;
 
     try
-      VkErrorCheck(xml, sUrl);
+      VkErrorCheck(xml);
     except
       xml.Free;
       raise;
@@ -368,8 +399,14 @@ begin
           sNewText:=StringReplace(sCode, '&#', '_', [rfIgnoreCase, rfReplaceAll]);
           Result:=StringReplace(Result, sCode, sNewText, [rfIgnoreCase, rfReplaceAll]);
         end;
+      end;
   end;
 
+procedure TVKClientSession.ForwardMessage(msg: TGateMessage; AToAddr: string);
+begin
+  msg.sTo:=AToAddr;
+  msg.sForwardMessages:=msg.sId;
+  SendMessage(msg);
 end;
 
 function TVKClientSession.GetAttachmentId(at: TjanXMLNode2): string;
@@ -414,24 +451,26 @@ end;
 function TVKClientSession.GetConfUserDescr(sUid: string): string;
 var
   fr: TFriend;
-begin
+begin // TODO: Cache users
+  Result := '';
+
   fr:=nil;
-  if IgnoreChats then
-  begin
-    Result:=TGateAddressee.Create(sUid).Jid;
-    exit;
-    //temp. workaround
-    //if we ignoring chat messages do not query names for same
-    //messages on every cycle
-  end;
-
+  while not Assigned(fr) do
+begin
   try
-    fr:=GetPerson(sUid);   //TODO: ! optimize
-    Result := fr.sFullName;
+    fr:=GetPerson(sUid);
   except
+      DoOnLog('GetConfUserDescr retry for '+sUid);
+      Sleep(1000);
+    end;
   end;
 
+
+  if Assigned(fr) then
+  begin
+  Result := fr.sFullName;
   FreeAndNil(fr);
+  end;
 end;
 
 function TVKClientSession.GetFriends: TFriendList;
@@ -466,20 +505,51 @@ begin
   end;
 end;
 
+function TVKClientSession.GetMsgWebLink(sChatUid, sMsgId: string): string;
+begin
+  Result:=Format('%sim?sel=%s&msgid=%s', [GetVkUrl, sChatUid, sMsgId]);
+end;
+
+function TVKClientSession.GetMsgWebLinkByJid(AJid, AMsgId: string): string;
+var
+  vkId: string;
+begin
+  vkId:=JIdToVkUid(AJid);
+  if vkId='' then
+    vkId:='c'+JIdToChatId(AJid);
+
+  Result:=GetMsgWebLink(vkId, AMsgId);
+end;
+
 function TVKClientSession.GetPerson(sAddr: string): TFriend;
 var
   fl: TFriendList;
+  fr: TFriend;
   sUid: string;
 begin     // you are owner of Result of this function
   Result := nil;
-  sUid:=TGateAddressee.Create(sAddr).Id; // JIdToVkUid(sAddr);
+  sUid:=JIdToVkUid(sAddr);
 
   if sUid='' then
     exit;
 
+  fr:=FPersonsCache.FindByAddr(sAddr);
+  if Assigned(fr) then
+  begin
+    Result:=fr.Duplicate;
+    exit;
+  end;
+
+  dbgInGetPerson:=True;
+  try
   fl:=GetPersons(sUid);
+  finally
+    dbgInGetPerson:=False;
+  end;
   if fl.Count>0 then
     Result := fl.Items[0].Duplicate;
+
+  FPersonsCache.Add(Result.Duplicate);
 
   fl.Free;
 end;
@@ -490,6 +560,7 @@ var
   Node: TjanXMLNode2;
   xml: TjanXMLParser2;
 begin
+  Result:=nil;
   Result:=TFriendList.Create(true);
 
   xml:=VkApiCallFmt(
@@ -504,8 +575,8 @@ begin
 
     for I := 0 to node.childCount-1 do
     begin
-      //DONE: НЕ_В_ДРУЗЬЯХ only for those that not in friendlist
-      toFriend(node.childNode[i], Result, '');
+      //TODO: НЕ_В_ДРУЗЬЯХ only for those that not in friendlist
+      toFriend(node.childNode[i], Result, 'VK.COM-foreign');
       //Result[i].sFullName:=Result[i].sFullName+' НЕ_В_ДРУЗЬЯХ';
       Result[i].sFullName:=Result[i].sFullName;
     end;
@@ -516,27 +587,17 @@ begin
   end;
 end;
 
-function TVKClientSession.SlNameFromIndex(sl: TStringList; Index: Integer):
-    string;
-var  //TODO: to child class of SL
-  SepPos: Integer;
-begin
-  if (Index >= 0) and (Index<sl.Count) then
-  begin
-    Result := sl.Strings[Index];
-    SepPos := AnsiPos(sl.NameValueSeparator, Result);
-    if (SepPos > 0) then
-      System.Delete(Result, SepPos, MaxInt)
-    else
-      Result := '';
-  end
-  else
-    Result := '';
-end;
-
 function TVKClientSession.GetVkUrl: string;
 begin
-  Result := IfThen(not IsMobileClient, 'http://vk.com/', 'http://m.vk.com/');
+  Result := IfThen(not IsMobileClient, 'https://vk.com/', 'https://m.vk.com/');
+end;
+
+procedure TVKClientSession.InitLongPoll;
+begin
+  LongPoll := TVkLongPollClient.Create(true);
+  LongPoll.VkApiCallFmt:=VkApiCallFmt;
+  LongPoll.OnEvent:=OnLongPollEvent;
+  LongPoll.OnLog:=OnLog;
 end;
 
 procedure TVKClientSession.KeepStatus;
@@ -548,7 +609,7 @@ begin
     VkApiCall(
           Format(
           'https://api.vk.com/method/account.setOnline.xml?v=3.0&access_token=%s', [ApiToken])
-          ).Free;
+          );
   except
 
   end;
@@ -558,6 +619,17 @@ function TVKClientSession.IsReady: boolean;
 begin
   Result := (sCaptchaSid='') or (sCaptchaResponse<>'');
   Result := Result and (ApiToken<>'');
+end;
+
+function TVKClientSession.JIdToVkUid(sTo: string): string;
+begin
+  //Result := GetRxGroup(sTo, '(?:id){0,1}(\d+?)(?:@|\z)', 1);   //this will conflict with chat addresses
+  Result := GetRxGroup(sTo, 'id(-?\d+?)(?:@|\z)', 1);
+end;
+
+function TVKClientSession.JIdToChatId(sTo: string): string;
+begin
+  Result := GetRxGroup(sTo, 'c(\d+?)(?:@|\z)', 1);
 end;
 
 function TVKClientSession.VkIdToJid(sSrc: string; bChatId: Boolean=false): string;
@@ -578,7 +650,7 @@ end;
 
 procedure TVKClientSession.MsgMarkAsRead(const sId: string);
 begin //TODO: ? persp: return bool from OnMessage, collect and send batch mids
-  VkApiCallFmt('messages.markAsRead', 'mids=%s', [sId]).Free;
+  VkApiCallFmt('messages.markAsRead', 'mids=%s', [sId]);
 end;
 
 procedure TVKClientSession.OnLongPollEvent;
@@ -644,7 +716,8 @@ begin                      //TODO: 5.0 compatible handler - reRequest captcha 3.
   end;
 end;
 
-function TVKClientSession.ParseMessageAttachments(Node: TjanXMLNode2): string;
+function TVKClientSession.ParseMessageAttachments(Node: TjanXMLNode2; Msg:
+    TGateMessage): string;
 var
   at: TjanXMLNode2;
   atChild: TjanXMLNode2;
@@ -657,7 +730,7 @@ var
   sAtId: string;
   sOwner: string;
   sType: string;
-  sChatUid: string;
+  //sChatUid: string;
   sHeight: string;
   sUrl: string;
   sUrlSmall: string;
@@ -677,21 +750,31 @@ begin
   end;
 
 
+  //if rootMsg.getChildByName('mid')<>nil then
+    //AMsgId:=rootMsg.getChildByName('mid').Text;
+  {
   if rootMsg.getChildByName('uid')<>nil then
     sChatUid:=rootMsg.getChildByName('uid').text;
   if rootMsg.getChildByName('chat_id')<>nil then
     sChatUid:='c'+rootMsg.getChildByName('chat_id').text;
-
+   }
   fwdmessages:=Node.getChildByName('fwd_messages');
   if Assigned(fwdmessages) then
-    Result := 'Цитата:'+CR+
-    '--'+CR+
-    ProcessAttachedFwdMessages(fwdmessages)+CR+
-    '--Конец цитаты'+CR;
+    Result :=
+    //'Цитата:'+CR+
+    //'--'+CR+
+    ProcessAttachedFwdMessages(fwdmessages, msg)
+    //+CR
+    //+'--Конец цитаты'+CR
+    +':'+CR
+    ;
 
   atments:=Node.getChildByName('attachments');
   if not Assigned(atments) then
     exit;
+
+  if Assigned(Msg) then       // Msg is nil when parsing fwd messages
+    Msg.HasAttachments:=True;
 
   i:=0;
   while i<atments.childCount do
@@ -699,6 +782,7 @@ begin
     Result:=Result+CR;
     bKnown:=false;
     at:=atments.childNode[i];
+    sType:='';
     try
       if at.getChildByName('type')=nil then
         continue;
@@ -716,35 +800,34 @@ begin
       if not Assigned(atChild) then
         continue;
 
+      bKnown:=true;
       sOwner:='';
+
+
       if atChild.getChildByName('owner_id')<>nil then
         sOwner:=atChild.getChildByName('owner_id').text;
       if atChild.getChildByName('to_id')<>nil then
         sOwner:=atChild.getChildByName('to_id').text;
 
-      if sOwner='' then
-        continue;
-
       sAtId:=GetAttachmentId(atChild);
       if atChild.getChildByName('access_key')<>nil then
          sAccessKey := atChild.getChildByName('access_key').text;
 
-      if sAtId='' then
-        continue;
+      //if sAtId='' then
+      //  continue;
 
-      bKnown:=true;
 
-      sType:='';
       if at.getChildByName('type')<>nil then
         sType:=at.getChildByName('type').text;
 
       Result:=Format('%sПриложение %s ->', [Result+CR, sType]);
 
-      Result:=Format('%s На странице: %s%s%s_%s',
-          [Result+CR, GetVkUrl, at.getChildByName('type').text,
-            sOwner, sAtId]);
-      Result:=Format('%s Диалог: %sim?sel=%s',
-          [Result+CR, GetVkUrl, sChatUid]);
+   //   if sOwner<>'' then
+   //   Result:=Format('%s На странице: %s%s%s_%s',
+   //       [Result+CR, GetVkUrl, at.getChildByName('type').text,
+   //         sOwner, sAtId]);
+      Result:=Format('%s %s',
+          [Result, GetMsgWebLinkByJid(msg.sFrom, msg.sId)]);
 
 
       sUrl:='';
@@ -805,7 +888,8 @@ begin
 
     finally
       if not bKnown then
-        Result:=Result+CR+Format('++НЕИЗВЕСТНЫЙ ТИП ВЛОЖЕНИЯ %sim?sel=%s', [GetVkUrl, sChatUid]);
+        Result:=Result+CR+Format('++НЕИЗВЕСТНЫЙ ТИП ВЛОЖЕНИЯ: %s %s',
+          [sType, GetMsgWebLink(msg.sFrom, msg.sId)]);
 
       inc(i);
     end;
@@ -816,14 +900,15 @@ begin
   Result:=Result+CR;
 end;
 
-function TVKClientSession.ProcessAttachedFwdMessages(fwdmessages:
-    TjanXMLNode2): string;
+function TVKClientSession.ProcessAttachedFwdMessages(fwdmessages: TjanXMLNode2;
+    AMsg: TGateMessage): string;
 var
   i: Integer;
   mes: TjanXMLNode2;
   sBody: string;
   dt: TDateTime;
   sFullName: string;
+  sFwd: string;
   sUid: string;
 begin
   Result:='';
@@ -842,23 +927,26 @@ begin
         sUid:=mes.getChildByName('uid').text;
 
       if mes.getChildByName('date')<>nil then
-        dt:=UnixToDateTime(StrToInt64(mes.getChildByName('date').text));
+        dt:=VkDateToDateTime(mes.getChildByName('date').text);
 
       if mes.getChildByName('body')<>nil then
       begin
         sBody  := MessageBodyTranslate(mes.getChildByName('body').text, true, true);
           try
-            sBody:= ParseMessageAttachments(mes) + sBody;
+            sBody:= ParseMessageAttachments(mes, AMsg) + sBody;
           except on e:Exception do
-            OnLog('ParseMessageAttachments(FWD) EXCEPTION:'+e.message);
+            DoOnLog('ParseMessageAttachments(FWD) EXCEPTION:'+e.message);
           end;
       end;
 
-      sFullName:=QueryUserFullName(sUid); //TODO:? (optimize) One query for all user_ids
+      sFullName:=QueryUserFullName(sUid); //TODO:Optimization: GetConfUserDescr + make cached
       if sFullName='' then
-        sFullName:='id'+sUid+'@vk.com';
-      Result:=Format('%s%s id%s (%s): %s'+CR ,[Result, sFullName, sUid,
+        sFullName:=GetVkUrl+'id'+sUid;
+
+      sFwd:=Format('%s id%s@vk.com (%s):'+CR+'%s'+CR ,[sFullName, sUid,
         FormatDateTime('dd.mm.yyyy hh:nn:ss', dt), sBody]);
+
+      Result:=Result+TabifyFwdBody(sFwd);
 
     finally
       inc(i);
@@ -869,7 +957,6 @@ end;
 function TVKClientSession.ProcessNewMessages: Boolean;
 var
   bByEvents: Boolean;
-  I: Integer;
 begin
   Result:=false;
 
@@ -877,32 +964,11 @@ begin
   begin
     LongPollHasEvents:=false; //before CheckNewMessages, it can be set to true now by TVKLongPollClient
     try
-      Result:=CheckNewMessages; //TODO: LongPollHasEvents:=true ON ERRORs
+      Result:=CheckNewMessages(false); //TODO: LongPollHasEvents:=true ON ERRORs
     except
       LongPollHasEvents:=true;
     end;
   end;
-
-
-  (*TODO: extracted code
-  if Assigned(LongPoll) then
-  begin
-    try
-      LongPoll.cs.Enter
-      if slNowTyping.Count>0 then
-      begin
-        for I := 0 to slNowTyping.Count-1 do
-        begin
-          msg
-        end;
-      end;
-    finally
-      LongPoll.cs.Leave;
-    end;
-  end;
-  *)
-  ProcessTyping;
-
 end;
 
 procedure TVKClientSession.QueryUserInfo;
@@ -934,51 +1000,13 @@ begin
        // don't pass exception, because
        // we want to continue XMPP auth
     on evk:EVkApi do
-       OnLog(Format('QueryUserInfo VK API ERROR: %d %s', [evk.Error, evk.Message]));
+       DoOnLog(Format('QueryUserInfo VK API ERROR: %d %s', [evk.Error, evk.Message]));
     on e:Exception do
-       OnLog('QueryUserInfo ERROR: '+e.Message);
+       DoOnLog('QueryUserInfo ERROR: '+e.Message);
   end;
 
   if sFullName='' then
-    OnLog('QueryUserInfo: ОШИБКА: не удалось получить данные.');
-end;
-
-function TVKClientSession.QueryUserFullName(sUid: string): string;
-var
-  sUrl: string;                      // TODO: Merge with QueryUserInfo
-  xml: TjanXMLParser2;
-begin
-
-  sUrl:=Format(
-    'https://api.vk.com/method/users.get.xml?v=3.0&access_token=%s&user_ids=%s',
-    [ApiToken, sUid]);
-
-
-  try
-    xml:=TjanXMLParser2.Create;
-
-    try
-      xml:=VkApiCall(sUrl);
-      if xml.name='response' then
-      begin
-        //Uid:=xml.getChildByName('user').getChildByName('uid').text;
-        Result:=xml.getChildByName('user').getChildByName('first_name').text+' '+
-        xml.getChildByName('user').getChildByName('last_name').text;
-      end;
-    finally
-      FreeAndNil(xml);
-    end;
-  except
-       // don't pass exception, because
-       // we want to continue XMPP auth
-    on evk:EVkApi do
-       OnLog(Format('QueryUserInfo1 VK API ERROR: %d %s', [evk.Error, evk.Message]));
-    on e:Exception do
-       OnLog('QueryUserFullName ERROR: '+e.Message);
-  end;
-
-  if sFullName='' then
-    OnLog('QueryUserFullName: ОШИБКА: не удалось получить данные для '+sUid);
+    DoOnLog('QueryUserInfo: ОШИБКА: не удалось получить данные.');
 end;
 
 procedure TVKClientSession.RespondCaptcha(str: string);
@@ -997,7 +1025,7 @@ begin
   else
   begin
     sCaptchaResponse:=str;
-    VkApiCallFmt('account.getInfo', '', []).Free;
+    VkApiCallFmt('account.getInfo', '', []);
   end;
 end;
 
@@ -1010,7 +1038,7 @@ var                             //не используется
   xml: TjanXMLParser2;
 begin
   Result:=false;
-  sUid:=TGateAddressee.Create(msg.sTo).Id;
+  sUid:=JIdToVkUid(msg.sTo);
   sBody:=AnsiToUtf8(msg.sBody);
   // так и не разобрался с кодировкой.
   // В основной версии отправляю через post
@@ -1033,37 +1061,33 @@ end;
 
 function TVKClientSession.SendMessage(msg: TGateMessage): Boolean;
 var
-  addr: TGateAddressee;
   sBody: string;
+  sCid: string;
   slPost: TStringList;
   sRet: string;
+  sUid: string;
   sUrl: string;
   xml: TjanXMLParser2;
 begin
   Result:=false;
-{  sUid:=JIdToVkUid(msg.sTo);
+  sUid:=JIdToVkUid(msg.sTo);
   if sUid='' then
     sCid:=JIdToChatId(msg.sTo);
- }
 
- addr:=TGateAddressee.Create(msg.sTo);
 
   msg.sBody:=EmojiTranslate(msg.sBody, false);
-
-  if Length(msg.sBody)>4096 then
-    raise EVkApi.Create(0, 'Сообщение не может содержать более 4096 символов');
 
   sUrl:='https://api.vk.com/method/messages.send.xml';
 
   slPost:=TStringList.Create;
   slPost.Add('v=3.0');
-
-  case addr.typ of
-    adt_user: slPost.Add('user_id='+addr.Id);
-    adt_conference: slPost.Add('chat_id='+addr.Id);
-  end;
+  if sUid<>'' then
+    slPost.Add('user_id='+sUid)
+    else
+      slPost.Add('chat_id='+sCid);
 
   slPost.Add('message='+msg.sBody);
+  slPost.Add('forward_messages='+msg.sForwardMessages);
   slPost.Add('access_token='+ApiToken);
 
   xml:=TjanXMLParser2.Create;
@@ -1085,6 +1109,8 @@ begin
   begin
     QueryUserInfo;
 
+    VkApiCallFmt('stats.trackVisitor', '', []);
+
     if Assigned(LongPoll) then
     begin
       if LongPoll.Suspended or LongPoll.Finished then
@@ -1093,27 +1119,24 @@ begin
         begin
           LongPoll.FreeOnTerminate:=true;
           LongPoll.Terminate;
-          LongPoll:=nil;
         end;
     end;
 
-    LongPollReCreate;
+    LongPoll := TVkLongPollClient.Create(true);
+    LongPoll.VkApiCallFmt:=VkApiCallFmt;
+    LongPoll.OnEvent:=OnLongPollEvent;
+    LongPoll.OnLog:=OnLog;
     LongPoll.Start;
 
     LongPollHasEvents:=true; // force message check
   end
     else
-      if Assigned(LongPoll) then
-      begin
-        LongPoll.FreeOnTerminate:=true;
-        LongPoll.Terminate;
-        LongPoll:=nil;
-      end;
+      LongPoll.Terminate;
 
 //  if sFullName='' then
   //  FApiToken:=''
     //else
-    OnTokenNotify(FApiToken<>'');
+    DoOnTokenNotify(FApiToken<>'');
 end;
 
 procedure TVKClientSession.toMessage(Node: TjanXMLNode2);
@@ -1142,8 +1165,8 @@ begin
   Result := UnixToDateTime(StrToInt64(sDate));
 end;
 
-procedure TVKClientSession.PrepareLastMessageId(ALast: Integer; bForce: boolean
-    = false);
+procedure TVKClientSession.SetLastMessageId(ALast: Integer; bForce: boolean =
+    false);
 begin
   FPrepareLastMessage:=max(FPrepareLastMessage, ALast);
   if bForce then
@@ -1154,13 +1177,13 @@ procedure TVKClientSession.SetLongPollHasEvents(const Value: boolean);
 begin
   //TODO : CS
   FLongPollHasEvents := Value;
+  //dtLastLongPoll:=Now;
 end;
 
 procedure TVKClientSession.SetOnLog(const Value: TLogProc);
 begin
   FOnLog := Value;
-  if Assigned(LongPoll) then
-    LongPoll.OnLog:=FOnLog;
+  LongPoll.OnLog:=FOnLog;
 end;
 
 function TVKClientSession.SleepRandom(maxMilliseconds: Integer):integer;
@@ -1238,6 +1261,7 @@ begin
       // just  fill here fields of msg
       msg.sBody := Format('%s %s %s -> ',
         [msg.sBody, GetConfUserDescr(msg.sFrom), msg.sFrom]);
+      msg.sFromPerson:=msg.sFrom;
       msg.sFrom := 'c'+Node.getChildByName('chat_id').text+'@vk.com';
       msg.sType:='groupchat';
 
@@ -1247,9 +1271,10 @@ begin
     end;
 
   if (Node.getChildByName('title')<>nil)
-    and (Trim(Node.getChildByName('title').text)<>'...') then
+    and (Node.getChildByName('title').text<>'...') then
     begin
-      msg.sBody := msg.sBody+Node.getChildByName('title').text;
+      msg.sChatTitle:=Node.getChildByName('title').text;
+      msg.sBody := msg.sBody+msg.sChatTitle;
       bCR:=true;
     end;
 
@@ -1259,9 +1284,9 @@ begin
     msg.sBody  := MessageBodyTranslate(msg.sBody, true, true) +
     MessageBodyTranslate(Node.getChildByName('body').text, true, true);
     try
-      msg.sBody  := ParseMessageAttachments(Node) + msg.sBody;
+      msg.sBody  := ParseMessageAttachments(Node, msg) + msg.sBody;
     except on e:Exception do
-      OnLog('ParseMessageAttachments EXCEPTION:'+e.message);
+      DoOnLog('ParseMessageAttachments EXCEPTION:'+e.message);
     end;
 
     if msg.sBody='' then
@@ -1288,7 +1313,7 @@ begin
     end;
 
     if IsMobileClient then
-      msg.sBody:=StringReplace(msg.sBody, 'http://vk.com', 'http://m.vk.com',
+      msg.sBody:=StringReplace(msg.sBody, 'https://vk.com', 'https://m.vk.com',
         [rfIgnoreCase, rfReplaceAll]);
 
     OnMessage(msg);
@@ -1302,32 +1327,9 @@ function TVKClientSession.MessageBodyTranslate(sBody: string; bDirection,
 begin
   Result:='';
   Result := XmlEscape(sBody, not bDirection, bDirection);
-  Result:=UnicodeToAnsiEscape(Result); //140309 seems like MSXML unescapes unicode
 
   if bEmoji then
     Result:=EmojiTranslate(Result, bDirection);
-
-end;
-
-procedure TVKClientSession.MsgMarkAsRead(sUid: string; const sStartId: string;
-    bRead: Boolean);
-var
-  sMethod: string;
-begin
-  sMethod:=IfThen(bRead, 'messages.markAsRead', 'messages.markAsNew');
-
-  if bRead then
-    VkApiCallFmt(
-      sMethod, 'user_id=%s&start_message_id=%s',
-      [sUid,sStartId]
-        ).Free
-        {
-        else
-        VkApiCallFmt(
-          sMethod,
-          'message_ids=%s',
-          [sStartId]
-            ).Free;       } //140911 messages.markAsNew is no longer supported
 
 end;
 
@@ -1339,56 +1341,24 @@ begin
     Result:=Node.getChildByName(sChild).text;
 end;
 
-procedure TVKClientSession.TypingAsync(sUid: string);
-begin
-  if slNowTyping.Values[sUid]='' then
-  begin
-    //slNowTyping.Add(sUid);
-    slNowTyping.Values[sUid]:=FloatToStr(Now);
-  end;
-end;
-
-procedure TVKClientSession.ProcessTyping;
+function TVKClientSession.QueryUserFullName(sUid: string): string;
 var
-  dt: TDateTime;
-  I: Integer;
-  msg: TGateMessage;
+  addr: string;
+  fr: TFriend;                      // TODO: (?) Merge with QueryUserInfo
 begin
-  if Assigned(LongPoll) then
-  begin
-    try
-      LongPoll.cs.Enter;
-      if slNowTyping.Count>0 then
-      begin
-        I := 0;
-        while i<slNowTyping.Count do
-        begin
-          msg:=TGateMessage.Create;
-          try
-            dt:=StrToFloat(slNowTyping.ValueFromIndex[i]);
-            msg.sFrom:=TGateAddressee.Create(SlNameFromIndex(slNowTyping, i)).Jid;
-            msg.sType:='typing';
+  Result:='';
 
-            if SecondsBetween(dt, Now)<6 then
-            begin
-              inc(i);
-            end
-            else
-              begin
-                msg.sBody:='paused';
-                slNowTyping.Delete(i);
-              end;
+  addr:=VkIdToJid(sUid, false);
 
-            OnMessage(msg);
-          finally
-            msg.Free;
-          end;
-        end;
-      end;
-    finally
-      LongPoll.cs.Leave;
-    end;
+  fr:=GetPerson(addr);
+  if not Assigned(fr) then
+    exit;
+  try
+    Result:=fr.sFullName;
+  finally
+    fr.Free;
   end;
+
 end;
 
 procedure TVKClientSession.SetOffline;
@@ -1397,10 +1367,29 @@ begin
     VkApiCall(
           Format(
           'https://api.vk.com/method/account.setOffline.xml?v=3.0&access_token=%s', [ApiToken])
-          ).Free;
+          );
   except
 
   end;
+end;
+
+function TVKClientSession.TabifyFwdBody(sBody: string): string;
+var
+  I: Integer;
+  sl: TStringList;
+begin
+  sl:=TStringList.Create;
+  sl.Text:=sBody;
+
+  for I := 0 to sl.Count-1 do
+  begin
+    sl.Strings[i]:='> '+sl.Strings[i];
+  end;
+
+
+  Result := sl.Text;
+
+  sl.Free;
 end;
 
 class function TVKClientSession.UnicodeToAnsiEscape1(str: string): AnsiString;
@@ -1481,7 +1470,7 @@ begin
         begin
           if evk.Error=EVK_TOOMANYREQUESTS then
           begin
-            OnLog(Format('EVK_TOOMANYREQUESTS;url:%s;count:%d;sleep:%d',
+            DoOnLog(Format('EVK_TOOMANYREQUESTS;url:%s;count:%d;sleep:%d',
               [sUrl, nRetries, SleepRandom(500)]));
 
             inc(nRetries);
@@ -1492,7 +1481,7 @@ begin
           begin
             if Assigned(OnTokenNotify) then
               ApiToken:='';
-              //OnTokenNotify(false);
+              //OnTokenNotify_(false);
 
           end;
 
@@ -1512,6 +1501,7 @@ var
   sApiVer: string;
   sUrl: string;
 begin
+  Result:=nil;
   sApiVer:='3.0';
 
   sUrl:=Format(sParams, args);
@@ -1520,7 +1510,7 @@ begin
   Result:=VkApiCall(sUrl, slPost);
 end;
 
-procedure TVKClientSession.VkErrorCheck(xml: TjanXMLNode2; sMethod: string);
+procedure TVKClientSession.VkErrorCheck(xml: TjanXMLNode2);
 var
   nErrCode: Integer;
   sMsg: string;
@@ -1551,20 +1541,7 @@ begin
   if EVK_CAPTCHANEEDED=nErrCode then
     ProcessCaptchaNeeded(xml);
 
-  raise EVkApi.Create(nErrCode, Format('VK API ERROR: %s %d %s', [sMethod, nErrCode, sMsg]));
-end;
-
-procedure TVKClientSession.WallPost(msg: TGateMessage);
-var
-  slParams: TStringList;
-begin
-  slParams:=TStringList.Create;
-  try
-    slParams.Values['message']:=msg.sBody;
-    VkApiCallFmt('wall.post', '', [], slParams).Free;
-  finally
-    slParams.Free;
-  end;
+  raise EVkApi.Create(nErrCode, Format('VK API ERROR: %d %s', [nErrCode, sMsg]));
 end;
 
 constructor TVxEmoji.Create;
@@ -1626,7 +1603,7 @@ begin
   if ATable='' then
     exit;
 
-  if (ATable<>'decimal')and(ATable<>'decimal_')and(ATable<>'unicode') then
+  if (ATable<>'decimal')and(ATable<>'decimal_') then
   begin
   begin
     if SetTablePath(AbsPath(Format('emos\%s.txt', [ATable]))) then
@@ -1672,13 +1649,6 @@ var
   I: Integer;
   pair: TArray<string>;
 begin
-
-  if TableName='unicode' then
-  begin
-    sTranslated:=AnsiUnescapeToUtf16(sCode);
-    Result:=true;
-    exit;
-  end;
 
   for I := 0 to FTable.Count-1 do
   begin

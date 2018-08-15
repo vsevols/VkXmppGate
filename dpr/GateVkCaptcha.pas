@@ -55,7 +55,7 @@ var
   str: string;
 begin
   FCaptchaSid:=sSid;
-  FImgUrl:=sUrl;
+  FImgUrl:=UrlChangeProtocol(sUrl, 'http://');
 
   gs:=TGateStorage.Create(nil);
   slCapLog:=TStringList.Create;
@@ -91,7 +91,7 @@ begin
       ac.ImgDir:=sImgDir;
 
       try
-        if ac.RecognizeUrl(sUrl) then
+        if ac.RecognizeUrl(FImgUrl) then
         begin
           IsProcessing:=true;
           inc(nUsed);
