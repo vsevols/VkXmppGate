@@ -8,7 +8,8 @@ interface
 
 uses
   libeay32, OpenSSLUtils, System.Classes, IdTCPServer, System.Contnrs,
-  janXMLparser2, GateGlobals, System.SysUtils, VkLongPollClient;
+  janXMLparser2, GateGlobals, System.SysUtils, VkLongPollClient, XSuperObject,
+  vkApi;
 
 type
   //TVkSessionStatus = (vks_notoken, vks_ok, vks_captcha);
@@ -126,7 +127,10 @@ type
     function TabifyFwdBody(sBody: string): string;
     procedure toFriend(Node: TjanXMLNode2; fl: TFriendList; sGroup: string = '');
     function VkApiCallFmt(const sMethod, sParams: string; args: array of const;
-        slPost: TStringList = nil): TjanXMLParser2;
+        slPost: TStringList = nil; AApiVersion: string = VKAPIVER3_0):
+        TjanXMLParser2;
+    function ApiCallJsonFmt(const AMethod, AParams: string; var AResponse:
+        ISuperObject; args: array of const; AApiVersion: string = '3.0'): Boolean;
     procedure VkErrorCheck(xml: TjanXMLNode2);
     property ApiToken: string read FApiToken write SetApiToken;
     property IdLastMessage: Integer read FIdLastMessage;
@@ -143,7 +147,7 @@ implementation
 uses
   IdURI, IdSSLOpenSSL,
   IdHTTP, httpsend, Vcl.Dialogs, ssl_openssl, System.DateUtils, GateFakes,
-  System.RegularExpressions, vkApi, uvsDebug, System.StrUtils;
+  System.RegularExpressions, uvsDebug, System.StrUtils;
 
 
 
@@ -233,7 +237,7 @@ begin
       '&client_secret=%s&code=%s'+
       '&redirect_uri=https://oauth.vk.com/blank.html',
       [sApiClientId, sApiKey, sCode]));
-  except
+  except on e:Exception do
     exit;
   end;
 
@@ -259,8 +263,8 @@ end;
 
 function TVKClientSession.CheckNewMessages(AOutBox: Boolean): boolean;
 var
+  LResponse: ISuperObject;
   OutFlag: string;
-  xml: TjanXMLParser2;
 begin
   Result := false;
 
@@ -271,16 +275,15 @@ begin
 
                                        //TODO: time_offset - param
                                        //TODO: ! There may be be situation in which old not-delivered messages are ignored
+   {
     xml:=VkApiCall(
       Format(
     'https://api.vk.com/method/messages.get.xml?v=3.0&access_token=%s&out=%s', [ApiToken, OutFlag]));
-
-    //CheckVkError(sXml);
-
+    }
+  if ApiCallJsonFmt('messages.getHistory', '', LResponse, [], VKAPIVER5_80) then
   try
-    Result:=ParseMessages(xml);
+    //Result:=ParseMessages(xml);
   finally
-    FreeAndNil(xml);
   end;
 end;
 
@@ -1496,18 +1499,36 @@ begin
 end;
 
 function TVKClientSession.VkApiCallFmt(const sMethod, sParams: string; args:
-    array of const; slPost: TStringList = nil): TjanXMLParser2;
+    array of const; slPost: TStringList = nil; AApiVersion: string =
+    VKAPIVER3_0): TjanXMLParser2;
 var
-  sApiVer: string;
-  sUrl: string;
+  LUrl: string;
 begin
   Result:=nil;
-  sApiVer:='3.0';
 
-  sUrl:=Format(sParams, args);
-  sUrl:=Format('https://api.vk.com/method/%s.xml?v=%s&access_token=%s&%s' ,
-    [sMethod, sApiVer, ApiToken, sUrl]);
-  Result:=VkApiCall(sUrl, slPost);
+  LUrl:=Format(sParams, args);
+  LUrl:=Format('https://api.vk.com/method/%s.xml?v=%s&access_token=%s&%s' ,
+    [sMethod, AApiVersion, ApiToken, LUrl]);
+  Result:=VkApiCall(LUrl, slPost);
+end;
+
+function TVKClientSession.ApiCallJsonFmt(const AMethod, AParams: string; var
+    AResponse: ISuperObject; args: array of const; AApiVersion: string =
+    '3.0'): Boolean;
+var
+  LResponse: string;
+  LUrl: string;
+begin
+  Result := False;
+
+  LUrl:=Format(AParams, args);
+  LUrl:=Format('https://api.vk.com/method/%s?v=%s&access_token=%s&%s' ,
+    [AMethod, AApiVersion, ApiToken, LUrl]);
+
+  LResponse := HttpMethodSSL(LUrl);
+  AResponse := SO(LResponse);
+
+  Result := True;
 end;
 
 procedure TVKClientSession.VkErrorCheck(xml: TjanXMLNode2);

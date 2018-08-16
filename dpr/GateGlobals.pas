@@ -3,7 +3,8 @@ unit GateGlobals;
 interface
 
 uses
-  System.Generics.Collections, System.RegularExpressions, System.Classes, System.SyncObjs, janXMLparser2;
+  System.Generics.Collections, System.RegularExpressions, System.Classes,
+  System.SyncObjs, janXMLparser2, vkApi;
 
 type
   TObjProc = procedure of object;
@@ -78,7 +79,7 @@ type
 
   TLogProc = procedure(const str: string) of object;
   TVkApiCallFmt = function (const sMethod, sParams: string; args: array of const;
-        slPost: TStringList = nil):TjanXMLParser2 of object;
+        slPost: TStringList = nil; AApiVersion: string=VKAPIVER3_0):TjanXMLParser2 of object;
   TVoidObjProc = procedure of object;
 
 
