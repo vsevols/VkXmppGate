@@ -73,8 +73,10 @@
         <DCC_RemoteDebug>true</DCC_RemoteDebug>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win32)'!=''">
+        <DCC_Define>D7UP;$(DCC_Define)</DCC_Define>
+        <DCC_Namespace>Vcl;$(DCC_Namespace)</DCC_Namespace>
         <Manifest_File>(None)</Manifest_File>
-        <DCC_UnitSearchPath>DUnitX-master;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>DUnitX-master;..\dpr;..\dpr\JanXMLParser;..\dpr\nativexml;..\dpr\nativexml\general;..\dpr\synapse400;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <VerInfo_Locale>1033</VerInfo_Locale>
         <DCC_RemoteDebug>false</DCC_RemoteDebug>
     </PropertyGroup>
@@ -88,6 +90,7 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="Unit1.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

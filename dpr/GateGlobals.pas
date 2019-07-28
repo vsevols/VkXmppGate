@@ -109,8 +109,6 @@ function FriendsCopy(friends: TFriendList): TFriendList;
 function HttpMethodSSL(sUrl: string; slPost: TStringList = nil; bSsl: boolean =
     true; AResponseStream: TStream = nil): string;
 
-function HttpMethodSSL_Synapse(sUrl: string; slPost: TStringList = nil): string;
-
 function Utf8StreamToString(Stream : TStream): String;
 
 function XmlEscape(str: string; bDirection: boolean; bFromVk: boolean = false):
@@ -155,11 +153,13 @@ var
   bVkApiLog: boolean;
   bCannotRestart: boolean; //prevents cyclic Logging
   ClientCount: Integer;
+  ProxyServer: string;
+  ProxyPort: integer;
 
 implementation
 
 uses
-  System.SysUtils, IdHTTP, IdSSLOpenSSL, httpsend, ssl_openssl, Vcl.Dialogs,
+  System.SysUtils, IdHTTP, IdSSLOpenSSL, Vcl.Dialogs,
   IdURI, Vcl.Forms, SHellApi, Windows, uvsDebug, System.DateUtils;
 
 function FriendFind(search: TFriendList; sAddr: string): Integer;
@@ -202,11 +202,9 @@ begin
     IdHTTP1.IOHandler:= IdSSLIOHandlerSocket1;
   end;
 
-  if dbgUseProxy then
-  begin
-    IdHTTP1.ProxyParams.ProxyServer := '202.79.46.153';
-    IdHTTP1.ProxyParams.ProxyPort := 51988;
-  end;
+  IdHTTP1.ProxyParams.ProxyServer := ProxyServer;
+  IdHTTP1.ProxyParams.ProxyPort := ProxyPort;
+
   //IdSSLIOHandlerSocket1.SSLOptions.Method:= sslvSSLv2;
   //IdSSLIOHandlerSocket1.SSLOptions.Mode := sslmUnassigned;
 
@@ -261,39 +259,6 @@ begin
   finally
     ms.free;
   end;
-end;
-
-function HttpMethodSSL_Synapse(sUrl: string; slPost: TStringList = nil): string;
-var
-  http: THttpSend;
-  sHost: string;
-  uri: TIdURI;
-begin
-  http:=THTTPSend.Create;
-  http.Sock.CreateWithSSL(TSSLOpenSSL);
-
-  uri:=TIdURI.Create(sUrl);
-  sHost:=uri.Host;
-  uri.Free;
-
-  http.Sock.Connect(sHost, '443');
-  http.Sock.SSLDoConnect;
-
-  if not Assigned(slPost) then
-  begin
-    if http.HTTPMethod('GET', sUrl) then
-      Result:=Utf8StreamToString(http.Document);
-  end
-    else
-    begin
-      slPost.Delimiter:='&';
-      http.MimeType := 'application/x-www-form-urlencoded';
-      http.Document.Write(Pointer(slPost.DelimitedText)^, Length(slPost.DelimitedText));
-      if http.HTTPMethod('POST', sUrl) then
-        Result:=Utf8StreamToString(http.Document);
-    end;
-
-  http.Free;
 end;
 
 function StringReplace(const str, sA, sB: string; bDirection: boolean): string;

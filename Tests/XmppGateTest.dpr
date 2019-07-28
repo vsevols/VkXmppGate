@@ -43,7 +43,8 @@ uses
   DUnitX.Utils,
   DUnitX.IoC,
   DUnitX.MemoryLeakMonitor.Default,
-  DUnitX.DUnitCompatibility;
+  DUnitX.DUnitCompatibility,
+  Unit1 in 'Unit1.pas';
 
 //{$R *.res}
 
