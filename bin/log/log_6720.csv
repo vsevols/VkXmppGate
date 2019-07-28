@@ -1,0 +1,18 @@
+0728 14:36:12.574;Starting 1121L Path: D:\Git\VkXmppGate\bin\xmppGate.exe
+0728 14:36:12.636;Port Bound: 5222
+0728 14:36:23.012;Execute() Context 0214AA40 Creating TJabberServerSession
+0728 14:36:23.026;=;TCP connected IP: 127.0.0.1 Con.Count=1
+0728 14:36:25.033;vsevpg127=AHZzZXZwZzEyNwBkZmdoag==; auth check; IP=127.0.0.1
+0728 14:36:25.059;vsevpg127=AHZzZXZwZzEyNwBkZmdoag==; message from bot: Вас приветствует шлюз VKXMPPGate версия 1121L. Профиль vsevpg127
+0728 14:36:25.071;vsevpg127=AHZzZXZwZzEyNwBkZmdoag==; message from bot: https://vk.com/topic-58410860_28964830 - Часто Задаваемые Вопросы
+https://vk.com/topic-58410860_28931059 - Для отображения всех смайликов установите пак
+Если не удаётся подключиться, пишите:
+Через это подключение - на support@vkxmpp.hopto.org (____XmppGate-Support в контакт-листе)
+XMPP: vsevols@jabber.ru SKYPE: vsevols  ICQ: 49842217
+https://vk.com/vkxmppgate - группа ВКонтакте
+https://vk.com/write6218430 или hackdrinkfuck@vk.com - лич. сообщение
+0728 14:36:25.082;vsevpg127=AHZzZXZwZzEyNwBkZmdoag==; message from bot: 1. Нажмите на ссылку.
+2. Подтвердите  доступ.
+3. Скопируйте и отправьте сюда адрес итоговой страницы
+https://oauth.vk.com/authorize?client_id=3881289&redirect_uri=https://oauth.vk.com/blank.html&scope=messages,offline&display=wap&responce_type=token
+0728 14:36:25.095;(SENDLAST)
