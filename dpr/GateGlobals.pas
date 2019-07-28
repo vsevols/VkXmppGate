@@ -201,6 +201,12 @@ begin
     IdSSLIOHandlerSocket1:=TIdSSLIOHandlerSocketOpenSSL.Create(IdHTTP1);
     IdHTTP1.IOHandler:= IdSSLIOHandlerSocket1;
   end;
+
+  if dbgUseProxy then
+  begin
+    IdHTTP1.ProxyParams.ProxyServer := '202.79.46.153';
+    IdHTTP1.ProxyParams.ProxyPort := 51988;
+  end;
   //IdSSLIOHandlerSocket1.SSLOptions.Method:= sslvSSLv2;
   //IdSSLIOHandlerSocket1.SSLOptions.Mode := sslmUnassigned;
 

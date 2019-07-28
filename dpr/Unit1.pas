@@ -109,12 +109,13 @@ begin
  // if isDbg then
    // TempEmojiPack;
 
-  if not isDbg then
+  if isDbg then
   begin
     bLongPollLog:=false;
     bXmppLog:=false;
     bFakes:=false;
     bVkApiLog:=false;
+    dbgUseProxy := True;
   end;
 
 

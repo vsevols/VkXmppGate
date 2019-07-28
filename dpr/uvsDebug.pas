@@ -45,6 +45,7 @@ cs: TCriticalSection;
 bFakes: boolean;
 sLastMsg: string;
 LastMsgCount:Cardinal;
+dbgUseProxy: Boolean;
 
 implementation
 
