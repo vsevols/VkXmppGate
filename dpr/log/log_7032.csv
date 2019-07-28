@@ -1,0 +1,7 @@
+0728 15:06:12.648;Starting 1121E5.8 Path: D:\Git\VkXmppGate\dpr\xmppGate.exe
+0728 15:06:12.653;Process Exisits. KILLING PID 3100
+0728 15:06:12.668;Port Bound: 5224
+0728 15:07:06.368;Execute() Context 021AA9F0 Creating TJabberServerSession
+0728 15:07:06.421;=;TCP connected IP: 0:0:0:0:0:0:0:1 Con.Count=1
+0728 15:07:10.351;InternalOnDisconnect Context 021AA9F0 Destroying TJabberServerSession
+0728 15:07:10.358;=; disconnected; IP=0:0:0:0:0:0:0:1

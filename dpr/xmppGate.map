@@ -37727,7 +37727,7 @@ Line numbers for xmppGate(xmppGate.dpr) segment .itext
 
 Bound resource files
 
-c:\program files (x86)\embarcadero\rad studio\11.0\lib\Win32\release\Controls.res
+d:\program files (x86)\embarcadero\rad studio\11.0\lib\Win32\release\Controls.res
 ufrmMemoEdit.dfm
 Unit1.dfm
 xmppGate.res
