@@ -1645,25 +1645,21 @@ end;
 
 function TVxEmoji.SetTablePath(const Value: string): Boolean;
 begin
+  Result := False;
 
   if Value='' then
   begin
     FTable.Clear;
     FTablePath := '';
-    Result:=true;
-    exit;
+    Exit(True);
   end;
 
-  try
-    try
-      FTable.LoadFromFile(Value);
-      FTablePath := Value;
-    except
+  if not FileExists(Value) then
+    Exit;
 
-    end;
-  finally
-    Result:=FTablePath=Value;
-  end;
+  FTable.LoadFromFile(Value);
+  FTablePath := Value;
+  Result:=True;
 end;
 
 function TVxEmoji.TranslateCode(sCode: string; var sTranslated: string):

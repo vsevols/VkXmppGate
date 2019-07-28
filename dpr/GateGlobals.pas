@@ -58,7 +58,7 @@ type
   public
       constructor Create(AOwner: TComponent);
       function LoadBool(sName: string; bDefault: boolean): Boolean;
-      function LoadValue(const sName: string; sDefault: string = ''): string;
+      function LoadValue(const AName: string; ADefault: string = ''): string;
       function ReadInt(const sName: string; nDefault: Integer = 0): integer;
       procedure SaveValue(const sName, sVal: string);
       procedure WriteInt(const sName: string; nVal: Integer);
@@ -666,30 +666,25 @@ begin
     Result:=true;
 end;
 
-function TGateStorage.LoadValue(const sName: string; sDefault: string = ''):
+function TGateStorage.LoadValue(const AName: string; ADefault: string = ''):
     string;
 var
+  LPath: string;
   sl: TStringList;
 begin
   sl:=TStringList.Create;
-  try
-    sl.LoadFromFile(Path+sName+'.txt');
-    Result:=Trim(sl.Text);
-  except
-    Result:=sDefault;
-  end;
+  LPath := Path+AName+'.txt';
+  if not FileExists(LPath) then
+    Exit(ADefault);
+  sl.LoadFromFile(LPath);
+  Result:=Trim(sl.Text);
   sl.Free;
 end;
 
 function TGateStorage.ReadInt(const sName: string; nDefault: Integer = 0):
     integer;
 begin
-  Result:=nDefault;
-
-  try
-    Result := StrToInt(Trim(LoadValue(sName)));
-  except
-  end;
+  Result := StrToInt(Trim(LoadValue(sName, IntToStr(nDefault))));
 end;
 
 procedure TGateStorage.SaveValue(const sName, sVal: string);

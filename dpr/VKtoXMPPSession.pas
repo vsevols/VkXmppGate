@@ -234,24 +234,16 @@ end;
 
 procedure TVKtoXmppSession.LoadProfileData;
 var
+  LLastId: Integer;
   sl: TStringList;
   sVal: string;
 begin
   Vk.Permissions:=profile.LoadValue('permissions', 'messages,offline');
   Vk.ApiToken:=Trim(Profile.LoadValue('token'));
 
-  try
-    Vk.PrepareLastMessageId(
-      StrToInt(Profile.LoadValue('LastVkMessId')), true
-      );
-  except
-  end;
-             {
-  if profile.LoadValue('alwaysmarkread')='0' then
-    MarkMsgsRead:=false
-    else
-      MarkMsgsRead:=true;
-              }
+  if TryStrToInt(Profile.LoadValue('LastVkMessId'), LLastId) then
+    Vk.PrepareLastMessageId(LLastId, True);
+
   MarkMsgsRead2:=profile.LoadValue('readmark', 'onreply');
 
   if profile.LoadValue('skipmarkedread')='1' then
