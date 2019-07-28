@@ -77,6 +77,7 @@
         <DCC_Optimize>false</DCC_Optimize>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win32)'!=''">
+        <DCC_ExeOutput>d:\Debug\VkXmppGate\</DCC_ExeOutput>
         <DCC_Define>D7UP;$(DCC_Define)</DCC_Define>
         <VerInfo_AutoGenVersion>true</VerInfo_AutoGenVersion>
         <VerInfo_MinorVer>1</VerInfo_MinorVer>
@@ -178,6 +179,8 @@
                 <Excluded_Packages>
                     <Excluded_Packages Name="$(BDSBIN)\dcloffice2k180.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
                     <Excluded_Packages Name="$(BDSBIN)\dclofficexp180.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Program Files (x86)\FastReport 6 VCL Trial\LibD18\dclfrxIBX18.bpl">FastReport 6.0 IBX Components</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Program Files (x86)\FastReport 6 VCL Trial\LibD18\dclfsIBX18.bpl">FastScript 1.9 IBX Components</Excluded_Packages>
                 </Excluded_Packages>
             </Delphi.Personality>
             <Platforms>
