@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{6020BA7E-44D8-4A8F-BA63-35444E8FCC9D}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="..\Aspto\Coding\AsptoTest\AsptoTest.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Tests\XmppGateTest.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="AsptoTest">
+        <MSBuild Projects="..\Aspto\Coding\AsptoTest\AsptoTest.dproj"/>
+    </Target>
+    <Target Name="AsptoTest:Clean">
+        <MSBuild Projects="..\Aspto\Coding\AsptoTest\AsptoTest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="AsptoTest:Make">
+        <MSBuild Projects="..\Aspto\Coding\AsptoTest\AsptoTest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="XmppGateTest">
+        <MSBuild Projects="Tests\XmppGateTest.dproj"/>
+    </Target>
+    <Target Name="XmppGateTest:Clean">
+        <MSBuild Projects="Tests\XmppGateTest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="XmppGateTest:Make">
+        <MSBuild Projects="Tests\XmppGateTest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="AsptoTest;XmppGateTest"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="AsptoTest:Clean;XmppGateTest:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="AsptoTest:Make;XmppGateTest:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>
