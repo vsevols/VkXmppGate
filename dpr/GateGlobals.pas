@@ -204,6 +204,7 @@ begin
 
   IdHTTP1.ProxyParams.ProxyServer := ProxyServer;
   IdHTTP1.ProxyParams.ProxyPort := ProxyPort;
+  IdHTTP1.HandleRedirects := True;
 
   //IdSSLIOHandlerSocket1.SSLOptions.Method:= sslvSSLv2;
   //IdSSLIOHandlerSocket1.SSLOptions.Mode := sslmUnassigned;

@@ -98,8 +98,8 @@ end;
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  isDbg:=false;
-//  isDbg:=true;
+  isDbg:=False;
+  isDbg:=True;
   //bFakes:=true;
 
   //bLongPollLog:=true;
@@ -115,7 +115,8 @@ begin
     bXmppLog:=false;
     bFakes:=false;
     bVkApiLog:=false;
-    dbgUseProxy := True;
+    GateGlobals.ProxyServer := '149.56.133.81';
+    GateGlobals.ProxyPort := 3128;
   end;
 
 
