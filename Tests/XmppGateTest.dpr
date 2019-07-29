@@ -44,7 +44,8 @@ uses
   DUnitX.IoC,
   DUnitX.MemoryLeakMonitor.Default,
   DUnitX.DUnitCompatibility,
-  Unit1 in 'Unit1.pas';
+  Unit1 in 'Unit1.pas',
+  ClassLibrary1_TLB in 'C:\Users\Vsev\Documents\Embarcadero\Studio\18.0\Imports\ClassLibrary1_TLB.pas';
 
 //{$R *.res}
 
