@@ -1039,7 +1039,7 @@ end;
 procedure TVKtoXmppSession.ProcessGetCode(msg: TGateMessage);
 begin
     Status:=gst_vkauth;
-    if not vk.QueryAccessToken(msg.sBody) then
+    if not vk.QueryAccessToken(msg.sBody, False) then
       XmppAskForVkAuthCode(true)
       else
         if vk.ApiToken<>'' then
@@ -1371,7 +1371,7 @@ begin
       '2. Подтвердите  доступ.'+CR+
       '3. Скопируйте и отправьте сюда адрес итоговой страницы'+CR+
       '%s',
-        [Vk.GetOAuthLink])
+        [Vk.GetOAuthLink(False)])
           , true);
 end;
 

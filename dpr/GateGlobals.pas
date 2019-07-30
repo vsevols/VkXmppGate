@@ -156,6 +156,7 @@ var
   bXmppLog: boolean;
   bVkApiLog: boolean;
   bCannotRestart: boolean; //prevents cyclic Logging
+  dbgNoLongPoll: Boolean;
   ClientCount: Integer;
   ProxyServer: string;
   ProxyPort: integer;

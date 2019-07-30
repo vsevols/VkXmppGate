@@ -57,7 +57,7 @@ type
     sApiKey: string;
     sCaptchaResponse: string;
     function CheckNewMessages: boolean;
-    procedure LongPollReCreate;
+    procedure LongPollReCreate(ASuspended: Boolean);
     function DoVkApiCall(sUrl: string; slPost: TStringList = nil): TjanXMLParser2;
     function ExtractAuthCode(sCode: string): string;
     function GetAttachmentId(at: TjanXMLNode2): string;
@@ -78,12 +78,17 @@ type
         SetLongPollHasEvents;
     //tcp: TIdTCPClient;
   public
+  const
+    VKXMPPGATE_GROUPID = -58410860;
+    GROUP_SCOPE='messages';
+  var
     bSilentCaptchaFill: boolean;
     bSkipMarkedRead: boolean;
     Emoji: TVxEmoji;
     IsMobileClient: boolean;
     //Status: TVkSessionStatus;
     FOnLog: TLogProc;
+    GroupToken: string;
     IgnoreChats: Boolean;
     Invisible: Boolean;
     OnMessage: procedure(msg: TGateMessage) of object;
@@ -99,11 +104,11 @@ type
     Uid: string;
     constructor Create(AOwner: TComponent);
     destructor Destroy; override;
-    function QueryAccessToken(sCode: string): boolean;
+    function QueryAccessToken(ACode: string; AGroup: Boolean): boolean;
     function GetCaptchaUrl5: string;
     function GetConfUserDescr(sUid: string): string;
     function GetFriends: TFriendList;
-    function GetOAuthLink: string;
+    function GetOAuthLink(AGroup: Boolean): string;
     function GetPerson(sAddr: string): TFriend;
     function GetPersons(sUids: string): TFriendList;
     function GetVkUrl: string;
@@ -125,6 +130,7 @@ type
     function SendMessage(msg: TGateMessage): Boolean;
     function VkDateToDateTime(sDate: string): TDateTime;
     procedure PrepareLastMessageId(ALast: Integer; bForce: boolean = false);
+    procedure SendMessage2(AMsg: TGateMessage);
     procedure SetOffline;
     function SleepRandom(maxMilliseconds: Integer):integer;
     procedure toFriend(Node: TjanXMLNode2; fl: TFriendList; sGroup: string = '');
@@ -139,6 +145,8 @@ type
     property OnCaptchaAccepted: TObjProc read FOnCaptchaAccepted write
         FOnCaptchaAccepted;
     property OnLog: TLogProc read FOnLog write SetOnLog;
+  published
+    function SelectToken(AGroup: Boolean): string;
   end;
 
 implementation
@@ -146,7 +154,7 @@ implementation
 uses
   IdURI, IdSSLOpenSSL,
   IdHTTP, httpsend, Vcl.Dialogs, ssl_openssl, System.DateUtils, GateFakes,
-  System.RegularExpressions, vkApi, uvsDebug, System.StrUtils;
+  System.RegularExpressions, vkApi, uvsDebug, System.StrUtils, SafeUnit;
 
 constructor TVKClientSession.Create(AOwner: TComponent);
 var
@@ -209,28 +217,34 @@ begin
   inherited;
 end;
 
-function TVKClientSession.QueryAccessToken(sCode: string): boolean;
+function TVKClientSession.QueryAccessToken(ACode: string; AGroup: Boolean):
+    boolean;
 var
   rx: TRegEx;
   sJson: string;
 begin
   Result:=false;
 
-  sCode:=ExtractAuthCode(sCode);
+  ACode:=ExtractAuthCode(ACode);
   try
     sJson:=HttpMethodSSL(   //NOT VkApiCall because reply is JSON
       Format(
       'https://api.vk.com/oauth/token?client_id=%s'+
       '&client_secret=%s&code=%s'+
       '&redirect_uri=https://oauth.vk.com/blank.html',
-      [sApiClientId, sApiKey, sCode]));
+      [sApiClientId, sApiKey, ACode]));
   except
     exit;
   end;
 
-  ApiToken:=GetRxGroup(sJson, '"access_token":"(.+?)"', 1);
   //uid:=GetRxGroup(sJson, '"user_id":(\d+)', 1);
-  QueryUserInfo();
+  if not AGroup then
+  begin
+    QueryUserInfo();
+    ApiToken := GetRxGroup(sJson, '"access_token":"(.+?)"', 1);
+  end
+  else
+    GroupToken := GetRxGroup(sJson, '"access_token_.+?":"(.+?)"', 1);
 
   if ApiToken<>'' then
     Result:=true;
@@ -269,13 +283,15 @@ begin
   end;
 end;
 
-procedure TVKClientSession.LongPollReCreate;
+procedure TVKClientSession.LongPollReCreate(ASuspended: Boolean);
 begin
-  LongPoll := TVkLongPollClient.Create(true);
+  LongPoll := TVkLongPollClient.Create(True);
   LongPoll.VkApiCallFmt:=VkApiCallFmt;
   LongPoll.OnEvent:=OnLongPollEvent;
   LongPoll.OnTyping:=TypingAsync;
   LongPoll.OnLog:=OnLog;
+  if not ASuspended then
+    LongPoll.Start;
 end;
 
 function TVKClientSession.DoVkApiCall(sUrl: string; slPost: TStringList = nil):
@@ -476,12 +492,19 @@ begin
   end;
 end;
 
-function TVKClientSession.GetOAuthLink: string;
+function TVKClientSession.GetOAuthLink(AGroup: Boolean): string;
 begin
-  Result := Format(
-      'https://oauth.vk.com/authorize?client_id=%s&redirect_uri='
-      +'https://oauth.vk.com/blank.html&scope=%s&display=wap&responce_type=token',
-        [sApiClientId, Permissions]);
+  if not AGroup then
+    Result := Format(
+        'https://oauth.vk.com/authorize?client_id=%s&redirect_uri='
+        +'https://oauth.vk.com/blank.html&scope=%s&display=wap&responce_type=token',
+          [sApiClientId, Permissions])
+    else
+      Result := Format(
+        'https://oauth.vk.com/authorize?client_id=%s&redirect_uri='
+        +'https://oauth.vk.com/blank.html&scope=%s&display=wap'
+        +'&responce_type=token&group_ids=%d',
+          [sApiClientId, GROUP_SCOPE, Abs(VKXMPPGATE_GROUPID)])
 end;
 
 function TVKClientSession.GetPerson(sAddr: string): TFriend;
@@ -1050,48 +1073,12 @@ begin
 end;
 
 function TVKClientSession.SendMessage(msg: TGateMessage): Boolean;
-var
-  addr: TGateAddressee;
-  sBody: string;
-  slPost: TStringList;
-  sRet: string;
-  sUrl: string;
-  xml: TjanXMLParser2;
 begin
-  Result:=false;
-{  sUid:=JIdToVkUid(msg.sTo);
-  if sUid='' then
-    sCid:=JIdToChatId(msg.sTo);
- }
-
- addr:=TGateAddressee.Create(msg.sTo);
-
-  msg.sBody:=EmojiTranslate(msg.sBody, false);
-
-  if Length(msg.sBody)>4096 then
-    raise EVkApi.Create(0, 'Сообщение не может содержать более 4096 символов');
-
-  sUrl:='https://api.vk.com/method/messages.send.xml';
-
-  slPost:=TStringList.Create;
-  slPost.Add('v=' + API_VER + '');
-
-  case addr.typ of
-    adt_user: slPost.Add('user_id='+addr.Id);
-    adt_conference: slPost.Add('chat_id='+addr.Id);
-  end;
-
-  slPost.Add('message='+msg.sBody);
-  slPost.Add('access_token='+ApiToken);
-
-  xml:=TjanXMLParser2.Create;
-
+  Result := True;
   try
-    xml.xml:=HttpMethodSSL(sUrl, slPost);
-    if xml.name='response' then
-      Result:=true;
-  finally
-    xml.Free;
+    SendMessage2(msg);
+  except
+    Result := False;
   end;
 end;
 
@@ -1115,8 +1102,7 @@ begin
         end;
     end;
 
-    LongPollReCreate;
-    LongPoll.Start;
+    LongPollReCreate(dbgNoLongPoll);
 
     LongPollHasEvents:=true; // force message check
   end
@@ -1408,6 +1394,55 @@ begin
       LongPoll.cs.Leave;
     end;
   end;
+end;
+
+function TVKClientSession.SelectToken(AGroup: Boolean): string;
+begin
+  case AGroup of
+    False: Result := ApiToken;
+    True: Result := GroupToken;
+  end;
+end;
+
+procedure TVKClientSession.SendMessage2(AMsg: TGateMessage);
+var
+  addr: TGateAddressee;
+  sBody: string;
+  slPost: TStringList;
+  sRet: string;
+  sUrl: string;
+  xml: TjanXMLParser2;
+begin
+{  sUid:=JIdToVkUid(AMsg.sTo);
+  if sUid='' then
+    sCid:=JIdToChatId(AMsg.sTo);
+ }
+
+  addr:=TGateAddressee.Create(AMsg.sTo);
+
+  AMsg.sBody:=EmojiTranslate(AMsg.sBody, false);
+
+  if Length(AMsg.sBody)>4096 then
+    raise EVkApi.Create(0, 'Сообщение не может содержать более 4096 символов');
+
+  sUrl:='https://api.vk.com/method/messages.send.xml';
+
+  slPost:=TStringList.Create;
+  slPost.Add('v=' + API_VER + '');
+    {
+  case addr.typ of
+    adt_user: slPost.Add('user_id='+addr.Id);
+    adt_conference: slPost.Add('chat_id='+addr.Id);
+  end;
+  }
+  slPost.Values['peer_id'] := addr.Id;
+  slPost.Values['random_id'] := '0';
+
+  slPost.Add('message='+AMsg.sBody);
+  slPost.Add('access_token='+SelectToken(True));
+
+  xml := VkApiCall(sUrl, slPost);
+  SafeFreeAndNil(xml);
 end;
 
 procedure TVKClientSession.SetOffline;

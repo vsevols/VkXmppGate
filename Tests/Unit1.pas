@@ -13,6 +13,7 @@ type
     FVk: TVkClientSession;
     function GetAccessToken: string;
     procedure InitVk;
+    procedure RequestAccessToken(AGroup: Boolean); overload;
     procedure VkMessage(AMsg: TGateMessage);
   private
     FMsg: TGateMessage;
@@ -22,7 +23,8 @@ type
     [TearDown]
     procedure TearDown;
   published
-    procedure RequestAccessToken;
+    procedure RequestAccessToken; overload;
+    procedure RequestAccessTokenGroup; overload;
     procedure TestVkMessageSendReceive;
     procedure TestVkProxy;
   end;
@@ -39,22 +41,41 @@ end;
 
 procedure TMyTestObject.InitVk;
 begin
+  SafeFreeAndNil(FVk);
   FVk := TVkClientSession.Create(nil);
+  FVk.ApiToken := Trim(FProfile.LoadValue('token'));
+  FVk.GroupToken := FProfile.LoadValue('GroupToken');
 end;
 
 procedure TMyTestObject.RequestAccessToken;
+begin
+  RequestAccessToken(False);
+end;
+
+procedure TMyTestObject.RequestAccessToken(AGroup: Boolean);
 var
   LInput: array of string;
 begin
   InitVk;
-  ShellExecute(FVk.GetOAuthLink);
+  FVk.Permissions := 'messages,offline';
+  ShellExecute(FVk.GetOAuthLink(AGroup));
 
   SetLength(LInput, 1);
   if not InputQuery('Copy url', ['Copy url'], LInput) then
     Assert.Fail('Canceled');
 
-  if FVk.QueryAccessToken(LInput[0]) then
-    FProfile.SaveValue('token', FVk.ApiToken);
+  if FVk.QueryAccessToken(LInput[0], AGroup) then
+  begin
+    if not AGroup then
+      FProfile.SaveValue('token', FVk.ApiToken)
+      else
+        FProfile.SaveValue('GroupToken', FVk.GroupToken);
+  end;
+end;
+
+procedure TMyTestObject.RequestAccessTokenGroup;
+begin
+  RequestAccessToken(True);
 end;
 
 procedure TMyTestObject.Setup;
@@ -76,13 +97,13 @@ procedure TMyTestObject.TestVkMessageSendReceive;
 var
   LMsg: TGateMessage;
 begin
+  dbgNoLongPoll := True;
   InitVk;
   LMsg := TGateMessage.Create(nil);
   try
-    FVk.ApiToken:=Trim(FProfile.LoadValue('token'));
     LMsg.sBody := Format('TMyTestObject.TestVkMessageSendReceive %d', [Random(MaxInt)]);
     LMsg.sTo:=FVk.Uid;
-    FVk.SendMessage(LMsg);
+    FVk.SendMessage2(LMsg);
     FVk.OnMessage:=VkMessage;
     while not Assigned(FMsg) or (FMsg.sBody <> LMsg.sBody) do
     begin
