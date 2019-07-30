@@ -1370,8 +1370,8 @@ begin
       '1. Нажмите на ссылку.'+CR+
       '2. Подтвердите  доступ.'+CR+
       '3. Скопируйте и отправьте сюда адрес итоговой страницы'+CR+
-      'https://oauth.vk.com/authorize?client_id=%s&redirect_uri=https://oauth.vk.com/blank.html&scope=%s&display=wap&responce_type=token',
-        [Vk.sApiClientId, vk.Permissions])
+      '%s',
+        [Vk.GetOAuthLink])
           , true);
 end;
 

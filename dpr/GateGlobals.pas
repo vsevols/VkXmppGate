@@ -3,7 +3,8 @@ unit GateGlobals;
 interface
 
 uses
-  System.Generics.Collections, System.RegularExpressions, System.Classes, System.SyncObjs, janXMLparser2;
+  System.Generics.Collections, System.RegularExpressions, System.Classes,
+  System.SyncObjs, janXMLparser2, Winapi.Windows;
 
 type
   TAddrType = (adt_unknown, adt_user, adt_conference);
@@ -137,6 +138,9 @@ function HttpMethodRawByte(sUrl: string; bSsl: boolean; slPost: TStringList =
 
 function AnsiUnescapeToUtf16(sCode: string): string;
 
+procedure ShellExecute(sPath: string; sParams: string = ''; nCmdShow: Cardinal
+    = SW_NORMAL);
+
 const
   CR = #$d#$a;
   SERVER_VER = '2111B1';
@@ -160,7 +164,7 @@ implementation
 
 uses
   System.SysUtils, IdHTTP, IdSSLOpenSSL, Vcl.Dialogs,
-  IdURI, Vcl.Forms, SHellApi, Windows, uvsDebug, System.DateUtils;
+  IdURI, Vcl.Forms, SHellApi, uvsDebug, System.DateUtils;
 
 function FriendFind(search: TFriendList; sAddr: string): Integer;
 var
@@ -356,7 +360,7 @@ begin
     gs.SaveValue('restartPids', slPids.Text);
 
   GateLog('before ShellExecute');
-  Result:=32<ShellExecute(0, 'open', pChar(Application.ExeName),
+  Result:=32<ShellAPI.ShellExecute(0, 'open', pChar(Application.ExeName),
     pChar(sCmdLine), nil, SW_SHOWNORMAL);
 
   GateLog('after ShellExecute');
@@ -518,6 +522,12 @@ begin                       //JS translated function convertCP2Char ( textString
         Result:=Format('UTF error:%d!', [nCode]);
 
     Result:=Char(nCode);
+end;
+
+procedure ShellExecute(sPath: string; sParams: string = ''; nCmdShow: Cardinal
+    = SW_NORMAL);
+begin //+uses Winapi.ShellAPI, Winapi.Windows
+  Winapi.ShellApi.ShellExecute(0, nil, pChar(sPath), pChar(sParams), nil, nCmdShow);
 end;
 
 

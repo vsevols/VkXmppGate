@@ -31,12 +31,21 @@ type
     property TablePath: string read FTablePath;
   end;
 
+  TOnTokenNotifyProc = procedure(bAuthorized: boolean) of object;
+
   TVKClientSession = class(TComponent)
     function VkIdToJid(sSrc: string; bChatId: Boolean=false): string;
     function DumpNode(Node: TjanXMLNode2): string;
     function EmojiTranslate_(str: string; bFromVk: boolean): string;
     function EmojiTranslate(str: string; bFromVk: boolean): string;
     class function UnicodeToAnsiEscape1(str: string): AnsiString;
+  strict private
+    // called with false when auth error occurs
+    FOnTokenNotify: TOnTokenNotifyProc;
+    const
+    /// <summary>5.75 = последн€€ с поддержкой XML
+    /// </summary>
+    API_VER = '5.75';
   private
     FApiToken: string;
     FIdLastMessage: Integer;
@@ -79,8 +88,6 @@ type
     Invisible: Boolean;
     OnMessage: procedure(msg: TGateMessage) of object;
     OnCaptchaNeeded: procedure(sCaptchaSid: string; sCaptchaUrl:string; sUrl5:string) of object;
-    // called with false when auth error occurs
-    OnTokenNotify: procedure(bAuthorized: boolean) of object;
     Permissions: string;
     sApiClientId: string;
     sCaptchaSid: string;
@@ -96,6 +103,7 @@ type
     function GetCaptchaUrl5: string;
     function GetConfUserDescr(sUid: string): string;
     function GetFriends: TFriendList;
+    function GetOAuthLink: string;
     function GetPerson(sAddr: string): TFriend;
     function GetPersons(sUids: string): TFriendList;
     function GetVkUrl: string;
@@ -126,6 +134,8 @@ type
     procedure WallPost(msg: TGateMessage);
     property ApiToken: string read FApiToken write SetApiToken;
     property IdLastMessage: Integer read FIdLastMessage;
+    property OnTokenNotify: TOnTokenNotifyProc read
+        FOnTokenNotify write FOnTokenNotify;
     property OnCaptchaAccepted: TObjProc read FOnCaptchaAccepted write
         FOnCaptchaAccepted;
     property OnLog: TLogProc read FOnLog write SetOnLog;
@@ -249,7 +259,7 @@ begin
                                        //TODO: ! There may be be situation in which old not-delivered messages are ignored
     xml:=VkApiCall(
       Format(
-      'https://api.vk.com/method/messages.get.xml?v=3.0&access_token=%s', [ApiToken]));
+      'https://api.vk.com/method/messages.get.xml?v=' + API_VER + '&access_token=%s', [ApiToken]));
 
     //CheckVkError(sXml);
 
@@ -448,7 +458,7 @@ begin
     Result:=fl;
 
 
-    sUrl:='https://api.vk.com/method/friends.get.xml?v=3.0&fields=uid,first_name,last_name,photo,bdate&access_token=%s';
+    sUrl:='https://api.vk.com/method/friends.get.xml?v=' + API_VER + '&fields=uid,first_name,last_name,photo,bdate&access_token=%s';
     xml:=VkApiCall(Format(sUrl, [ApiToken]));
 
  try
@@ -464,6 +474,14 @@ begin
   finally
     FreeAndNil(xml);
   end;
+end;
+
+function TVKClientSession.GetOAuthLink: string;
+begin
+  Result := Format(
+      'https://oauth.vk.com/authorize?client_id=%s&redirect_uri='
+      +'https://oauth.vk.com/blank.html&scope=%s&display=wap&responce_type=token',
+        [sApiClientId, Permissions]);
 end;
 
 function TVKClientSession.GetPerson(sAddr: string): TFriend;
@@ -547,7 +565,7 @@ begin
   try
     VkApiCall(
           Format(
-          'https://api.vk.com/method/account.setOnline.xml?v=3.0&access_token=%s', [ApiToken])
+          'https://api.vk.com/method/account.setOnline.xml?v=' + API_VER + '&access_token=%s', [ApiToken])
           ).Free;
   except
 
@@ -912,7 +930,7 @@ var
 begin
 
   sUrl:=Format(
-    'https://api.vk.com/method/users.get.xml?v=3.0&access_token=%s',
+    'https://api.vk.com/method/users.get.xml?v=' + API_VER + '&access_token=%s',
     [ApiToken]);
 
 
@@ -923,7 +941,7 @@ begin
       xml:=VkApiCall(sUrl);
       if xml.name='response' then
       begin
-        Uid:=xml.getChildByName('user').getChildByName('uid').text;
+        Uid:=xml.getChildByName('user').getChildByName('id').text;
         sFullName:=xml.getChildByName('user').getChildByName('first_name').text+' '+
         xml.getChildByName('user').getChildByName('last_name').text;
       end;
@@ -950,7 +968,7 @@ var
 begin
 
   sUrl:=Format(
-    'https://api.vk.com/method/users.get.xml?v=3.0&access_token=%s&user_ids=%s',
+    'https://api.vk.com/method/users.get.xml?v=' + API_VER + '&access_token=%s&user_ids=%s',
     [ApiToken, sUid]);
 
 
@@ -1017,7 +1035,7 @@ begin
 
 
   sUrl:=Format(
-    'https://api.vk.com/method/messages.send.xml?v=3.0&user_id=%s&message=%s&guid=%s&access_token=%s',
+    'https://api.vk.com/method/messages.send.xml?v=' + API_VER + '&user_id=%s&message=%s&guid=%s&access_token=%s',
     [sUid, sBody, msg.sId, ApiToken]);
 
   xml:=TjanXMLParser2.Create;
@@ -1056,7 +1074,7 @@ begin
   sUrl:='https://api.vk.com/method/messages.send.xml';
 
   slPost:=TStringList.Create;
-  slPost.Add('v=3.0');
+  slPost.Add('v=' + API_VER + '');
 
   case addr.typ of
     adt_user: slPost.Add('user_id='+addr.Id);
@@ -1113,7 +1131,8 @@ begin
 //  if sFullName='' then
   //  FApiToken:=''
     //else
-    OnTokenNotify(FApiToken<>'');
+    if Assigned(OnTokenNotify) then
+      OnTokenNotify(FApiToken<>'');
 end;
 
 procedure TVKClientSession.toMessage(Node: TjanXMLNode2);
@@ -1396,7 +1415,7 @@ begin
   try
     VkApiCall(
           Format(
-          'https://api.vk.com/method/account.setOffline.xml?v=3.0&access_token=%s', [ApiToken])
+          'https://api.vk.com/method/account.setOffline.xml?v=' + API_VER + '&access_token=%s', [ApiToken])
           ).Free;
   except
 
@@ -1512,7 +1531,7 @@ var
   sApiVer: string;
   sUrl: string;
 begin
-  sApiVer:='3.0';
+  sApiVer := API_VER;
 
   sUrl:=Format(sParams, args);
   sUrl:=Format('https://api.vk.com/method/%s.xml?v=%s&access_token=%s&%s' ,
